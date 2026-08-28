@@ -23,6 +23,8 @@ import { PhoneField } from '../shared/PhoneField';
 import { CountrySelect } from '../shared/CountrySelect';
 import { PartnerOrgCombobox } from '../shared/PartnerOrgCombobox';
 import { FormSection } from '../shared/FormSection';
+import { AutoGrowTextField } from '../shared/AutoGrowTextField';
+import { HelpTooltip } from '../shared/HelpTooltip';
 import { OtpVerificationModal } from '../OtpVerificationModal';
 import type { CreatorRole } from '../../schema/visitRequestV2.schema';
 import type { CampusHostSelectionChoice } from '../../api/visitRequestApi';
@@ -64,6 +66,9 @@ interface Props {
     isBusy: () => boolean;
   }) => void;
 }
+
+/** Mirrors the 2 bounded "Yêu cầu bổ sung" fields in `buildAdditionalRequirementsSchema`. */
+const ADDITIONAL_REQUIREMENTS_MAX = { transportationNote: 2000, notes: 2000 } as const;
 
 /**
  * Per-campus form v2 (plan §9.1): request-level registrant + primary contact once, then one
@@ -359,6 +364,14 @@ export const VisitRequestFormV2: React.FC<Props> = ({
 
   const { register, formState: { errors } } = form;
   const regErr = errors.registerInfo;
+  const addlErr = errors.additionalRequirements;
+  // Same reasoning as CampusVisitCard's own `mediaConsentSelectedLabel`: the closed native select
+  // may truncate the long AGREED wording, so the full current answer stays reachable via the
+  // HelpTooltip instead of relying on a bare (unreachable) `title` attribute.
+  const mediaConsentValue = form.watch('additionalRequirements.mediaConsentStatus');
+  const mediaConsentSelectedLabel = mediaConsentValue === 'DECLINED'
+    ? t('visitRequestV2:card.mediaDeclined')
+    : t('visitRequestV2:card.mediaAgreed');
 
   // One card per campus open for registration — the ceiling and the "already taken" set both come
   // from live data, so a campus added or retired in the backend is reflected without a code change.
@@ -776,7 +789,6 @@ export const VisitRequestFormV2: React.FC<Props> = ({
         )}
       </FormSection>
 
-
       {/* ── Per-campus cards ── */}
       <FormSection
         id="v2-campuses"
@@ -823,6 +835,9 @@ export const VisitRequestFormV2: React.FC<Props> = ({
                   canRemove={campusVisitFields.fields.length > 1}
                   showErrors={showErrors}
                   minAdvanceHours={vm.minAdvanceHours}
+                  // Collected once at request level above (v2-additional) — see that section's
+                  // comment and `hideAdditionalRequirements` on CampusVisitCard.
+                  hideAdditionalRequirements
                   // Authenticated create is self-registration always, so the processing panel is
                   // simply "does this form belong to an authenticated account" — there is no more
                   // delegated state where a campus routes to its Staff Leader by default instead.
@@ -853,6 +868,97 @@ export const VisitRequestFormV2: React.FC<Props> = ({
           <Plus className="h-4 w-4" />
           {t('visitRequestV2:card.addCampus', { count: campusVisitFields.fields.length, max: campusLimit })}
         </button>
+      </FormSection>
+
+      {/* ── Request-level: "Yêu cầu bổ sung" ──
+          Filled ONCE for the whole visit, whatever the campus count (plan: request-level
+          additional requirements) — it used to be repeated identically inside every campus card,
+          which meant re-answering it once per campus for no reason and risked the copies drifting
+          apart. `useVisitRequestFormV2`'s `buildV2CreatePayload` copies this answer onto every
+          `campusVisits[]` element at submit time, so the backend contract (which still carries
+          these 4 fields per campus) sees exactly what it always has. */}
+      <FormSection id="v2-additional" title={t('visitRequestV2:card.additional')}>
+        <div className="grid grid-cols-12 gap-x-4 xl:gap-x-6 gap-y-4">
+          <FormField
+            className="col-span-12 sm:col-span-6 lg:col-span-3"
+            label={t('visitRequestV2:card.workingLanguage')}
+            required
+            error={addlErr?.workingLanguage?.message}
+            showValidIcon={false}
+          >
+            <select {...register('additionalRequirements.workingLanguage')} className={inputCls(false, false, false)}>
+              <option value="VI">{t('visitRequestV2:card.languageVi')}</option>
+              <option value="EN">{t('visitRequestV2:card.languageEn')}</option>
+            </select>
+          </FormField>
+          <FormField
+            className="col-span-12 sm:col-span-6 lg:col-span-3"
+            label={
+              <span className="inline-flex items-center gap-1">
+                {t('visitRequestV2:card.mediaConsent')}
+                <HelpTooltip
+                  testId="v2-additional-media-consent-help"
+                  content={
+                    <>
+                      <p>{t('visitRequestV2:card.mediaConsentTooltip')}</p>
+                      <p className="mt-1 font-bold">{mediaConsentSelectedLabel}</p>
+                    </>
+                  }
+                />
+              </span>
+            }
+            required
+            error={addlErr?.mediaConsentStatus?.message}
+            showValidIcon={false}
+          >
+            <select {...register('additionalRequirements.mediaConsentStatus')} className={inputCls(false, false, false)}>
+              <option value="AGREED">{t('visitRequestV2:card.mediaAgreed')}</option>
+              <option value="DECLINED">{t('visitRequestV2:card.mediaDeclined')}</option>
+            </select>
+          </FormField>
+          <FormField
+            className="col-span-12 lg:col-span-3"
+            label={t('visitRequestV2:card.transportationNote')}
+            error={addlErr?.transportationNote?.message}
+            showValidIcon={false}
+          >
+            <Controller
+              name="additionalRequirements.transportationNote"
+              control={form.control}
+              render={({ field }) => (
+                <AutoGrowTextField
+                  value={field.value ?? ''}
+                  onChange={fieldChangeHandler(form, field.name, field.onChange)}
+                  onBlur={field.onBlur}
+                  hasError={!!addlErr?.transportationNote}
+                  maxLength={ADDITIONAL_REQUIREMENTS_MAX.transportationNote}
+                  ariaLabel={t('visitRequestV2:card.transportationNote')}
+                />
+              )}
+            />
+          </FormField>
+          <FormField
+            className="col-span-12 lg:col-span-3"
+            label={t('visitRequestV2:card.notes')}
+            error={addlErr?.notes?.message}
+            showValidIcon={false}
+          >
+            <Controller
+              name="additionalRequirements.notes"
+              control={form.control}
+              render={({ field }) => (
+                <AutoGrowTextField
+                  value={field.value ?? ''}
+                  onChange={fieldChangeHandler(form, field.name, field.onChange)}
+                  onBlur={field.onBlur}
+                  hasError={!!addlErr?.notes}
+                  maxLength={ADDITIONAL_REQUIREMENTS_MAX.notes}
+                  ariaLabel={t('visitRequestV2:card.notes')}
+                />
+              )}
+            />
+          </FormField>
+        </div>
       </FormSection>
       </fieldset>
       )}

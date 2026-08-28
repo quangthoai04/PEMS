@@ -105,6 +105,21 @@ const personRowHasContent = (person: unknown): boolean => {
   );
 };
 
+/**
+ * The request-level "Yêu cầu bổ sung" (workingLanguage/mediaConsentStatus/transportationNote/notes,
+ * plan: request-level additional requirements). Shares the exact born-value comparison
+ * `campusVisitHasContent` uses for the same 2 enums — the two fields used to live on the campus
+ * card and moved here, so "untouched" must still mean the same thing it always did.
+ */
+const additionalRequirementsHasContent = (value: unknown): boolean => {
+  const r = value as Record<string, unknown> | null | undefined;
+  return Boolean(r) && (
+    filled(r?.transportationNote) || filled(r?.notes)
+    || (filled(r?.workingLanguage) && r?.workingLanguage !== UNTOUCHED_WORKING_LANGUAGE)
+    || (filled(r?.mediaConsentStatus) && r?.mediaConsentStatus !== UNTOUCHED_MEDIA_CONSENT)
+  );
+};
+
 const operationalContactHasContent = (contact: unknown): boolean => {
   const c = contact as Record<string, unknown> | null | undefined;
   return Boolean(c) && (
@@ -156,6 +171,7 @@ export function hasMeaningfulV2Data(values: Partial<VisitRequestV2Schema> | null
     || filled(reg?.phone) || filled(reg?.email) || filled(reg?.nationality)
     || (values.partnerId !== undefined && values.partnerId !== null)
     || (filled(values.partnerSelectionMode) && values.partnerSelectionMode !== UNTOUCHED_PARTNER_MODE)
+    || additionalRequirementsHasContent(values.additionalRequirements)
     || (Array.isArray(values.campusVisits) && values.campusVisits.some(campusVisitHasContent)),
   );
 }

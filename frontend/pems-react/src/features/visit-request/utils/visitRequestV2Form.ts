@@ -85,6 +85,22 @@ export const createEmptyCampusVisit = (clientKey: string = newClientKey()): Camp
   notes: '',
 });
 
+/**
+ * The request-level "Yêu cầu bổ sung" a fresh CREATE form is born with — same born values as a
+ * fresh campus card (`createEmptyCampusVisit`), because the two used to be the same fields and the
+ * defaults must not drift apart. Read from there rather than repeated as literals, for the same
+ * reason `visitRequestV2DraftStorage`'s `UNTOUCHED_*` constants are.
+ */
+export const createEmptyAdditionalRequirements = (): NonNullable<VisitRequestV2Schema['additionalRequirements']> => {
+  const born = createEmptyCampusVisit('untouched-sentinel');
+  return {
+    workingLanguage: born.workingLanguage,
+    mediaConsentStatus: born.mediaConsentStatus,
+    transportationNote: born.transportationNote,
+    notes: born.notes,
+  };
+};
+
 /** JSON-safe deep clone (the form state is string/number/boolean/null/array only). */
 const deepClone = <T>(value: T): T =>
   typeof structuredClone === 'function'
@@ -336,6 +352,14 @@ const trimOrNull = (v: string | undefined | null): string | null => {
 const toApiCampusVisit = (
   cv: CampusVisitSchema,
   hostChoice: CampusHostSelectionChoice | undefined,
+  /**
+   * The CREATE form's request-level "Yêu cầu bổ sung", when the caller has one to apply. Present
+   * only from `buildV2CreatePayload` — when given, its 4 fields override `cv`'s own (which on
+   * CREATE never left their born defaults, since the UI no longer writes to them per campus).
+   * Absent from `buildV2EditPayload`, which keeps sourcing these fields from `cv` itself: an
+   * existing campus's own copy is what the per-campus EDIT screens let the user change.
+   */
+  additionalRequirements?: VisitRequestV2Schema['additionalRequirements'],
 ): V2CampusVisitForm => {
   // Exact-one, resolved ONCE and shared by both relation fields below — never `.some()` (cannot tell
   // one match from several) or `.find()` (silently accepts the first of several).
@@ -406,10 +430,10 @@ const toApiCampusVisit = (
     // picked row is itself brand new this session"; the backend tells the two apart from its own
     // contentChanged, never from which of these two fields is null.
     operationalContactGuestMemberId: relationGuestMemberId,
-    workingLanguage: cv.workingLanguage,
-    transportationNote: trimOrNull(cv.transportationNote),
-    mediaConsentStatus: cv.mediaConsentStatus,
-    notes: trimOrNull(cv.notes),
+    workingLanguage: additionalRequirements?.workingLanguage ?? cv.workingLanguage,
+    transportationNote: trimOrNull(additionalRequirements?.transportationNote ?? cv.transportationNote),
+    mediaConsentStatus: additionalRequirements?.mediaConsentStatus ?? cv.mediaConsentStatus,
+    notes: trimOrNull(additionalRequirements?.notes ?? cv.notes),
     // Omitted entirely when the caller has no host rights: the backend REFUSES a payload from an
     // external submit that names anybody, so sending a placeholder would fail the whole request.
     hostSelection: hostChoice
@@ -449,7 +473,7 @@ export const buildV2CreatePayload = (
     },
     partnerId: values.partnerSelectionMode === 'EXISTING_PARTNER' ? values.partnerId ?? null : null,
     campusVisits: (values.campusVisits ?? []).map(cv =>
-      toApiCampusVisit(cv, hostByCampus.get((cv.campus ?? '').trim().toUpperCase()))),
+      toApiCampusVisit(cv, hostByCampus.get((cv.campus ?? '').trim().toUpperCase()), values.additionalRequirements)),
   };
 };
 

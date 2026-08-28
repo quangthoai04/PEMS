@@ -198,6 +198,40 @@ describe('buildV2CreatePayload', () => {
     expect(payload.campusVisits[0]).not.toHaveProperty('mediaConsentNote');
   });
 
+  // Request-level "Yêu cầu bổ sung" (plan: request-level additional requirements): the CREATE form
+  // now collects workingLanguage/mediaConsentStatus/transportationNote/notes ONCE, and this is where
+  // that single answer is copied onto every campus in the payload.
+  it('overrides every campus\'s requirements with the request-level answer when one is given', () => {
+    const v = values([
+      { ...filledCampus('a', 'HN'), workingLanguage: 'VI', mediaConsentStatus: 'DECLINED', notes: 'per-campus HN' },
+      { ...filledCampus('b', 'HCM'), workingLanguage: 'VI', mediaConsentStatus: 'DECLINED', notes: 'per-campus HCM' },
+    ]);
+    v.additionalRequirements = {
+      workingLanguage: 'EN', mediaConsentStatus: 'AGREED', transportationNote: 'Xe 45 chỗ', notes: 'ghi chú chung',
+    };
+
+    const payload = buildV2CreatePayload(v, 'sub-shared-requirements');
+
+    for (const cv of payload.campusVisits) {
+      expect(cv.workingLanguage).toBe('EN');
+      expect(cv.mediaConsentStatus).toBe('AGREED');
+      expect(cv.transportationNote).toBe('Xe 45 chỗ');
+      expect(cv.notes).toBe('ghi chú chung');
+    }
+  });
+
+  // Without a request-level answer (every EXISTING test/caller that predates it), each campus's OWN
+  // fields still flow through unchanged — the override is additive, never a behavior change for a
+  // caller that never populates `additionalRequirements`.
+  it('falls back to each campus\'s own requirements when no request-level answer is given', () => {
+    const payload = buildV2CreatePayload(
+      values([filledCampus('a', 'HN'), { ...filledCampus('b', 'HCM'), notes: 'ghi chú HCM riêng' }]),
+      'sub-no-override',
+    );
+    expect(payload.campusVisits[0].notes).toBe('ghi chú HN');
+    expect(payload.campusVisits[1].notes).toBe('ghi chú HCM riêng');
+  });
+
   it('attaches per-campus processing ONLY for matching campuses (authenticated mode)', () => {
     const payload = buildV2CreatePayload(
       values([filledCampus('a', 'HN'), filledCampus('b', 'HCM')]),

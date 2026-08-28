@@ -14,6 +14,7 @@ import {
   buildV2CreatePayload,
   campusVisitHasUserContent,
   cloneCampusVisitContent,
+  createEmptyAdditionalRequirements,
   createEmptyCampusVisit,
   listOverwrittenCampuses,
   mapServerFieldPathToFormPath,
@@ -262,6 +263,9 @@ export const DEFAULT_VISIT_REQUEST_V2_VALUES = (): VisitRequestV2Schema => ({
   registerInfo: { fullName: '', organization: '', jobTitle: '', phone: '', email: '', nationality: '' },
   partnerSelectionMode: 'NEW_ORGANIZATION',
   partnerId: null,
+  // "Yêu cầu bổ sung", filled once for the whole visit — see `buildV2CreatePayload`, which copies
+  // this onto every campus at submit time.
+  additionalRequirements: createEmptyAdditionalRequirements(),
   campusVisits: [createEmptyCampusVisit()],
 });
 

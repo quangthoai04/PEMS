@@ -106,6 +106,17 @@ interface Props {
    */
   contactReadOnly?: boolean;
   /**
+   * Hides the "Yêu cầu bổ sung" section (workingLanguage/mediaConsentStatus/transportationNote/
+   * notes) on THIS card. Set by `VisitRequestFormV2` (the create form), which now collects these
+   * once at request level and copies the answer onto every campus at submit time
+   * (`buildV2CreatePayload`) — rendering them again per card would let the two silently disagree.
+   *
+   * Left false (the default) for the per-campus EDIT screens (`EditVisitRequestV2Page`/
+   * `EditPendingCampusV2Page`), where an EXISTING campus's own answer is exactly what stays
+   * editable here.
+   */
+  hideAdditionalRequirements?: boolean;
+  /**
    * Authenticated create only: who will process THIS campus. Omitted entirely for the public
    * form, which never renders internal processing controls and never sends a processing intent.
    */
@@ -140,6 +151,7 @@ export const CampusVisitCard: React.FC<Props> = ({
   showErrors,
   minAdvanceHours = V2_MIN_ADVANCE_HOURS_CREATE,
   contactReadOnly = false,
+  hideAdditionalRequirements = false,
   processing,
 }) => {
   const { t } = useTranslation(['visitRequestV2', 'visitRequest']);
@@ -2569,7 +2581,9 @@ export const CampusVisitCard: React.FC<Props> = ({
           )}
         </fieldset>
 
-        {/* Additional requirements */}
+        {/* Additional requirements — hidden on the create form, which now collects this once at
+            request level (see `hideAdditionalRequirements` above). */}
+        {!hideAdditionalRequirements && (
         <fieldset className="mb-1">
           <legend className="mb-3 text-sm font-extrabold text-slate-900">{t('visitRequestV2:card.additional')}</legend>
           <div className="grid grid-cols-12 gap-x-4 xl:gap-x-6 gap-y-4">
@@ -2639,20 +2653,23 @@ export const CampusVisitCard: React.FC<Props> = ({
               />
             </FormField>
           </div>
-
-          {/* Who processes THIS campus — authenticated create only; absent for public submit. */}
-          {processing && (
-            <CampusHostSelectionV2Panel
-              campusCode={campusCode}
-              role={processing.role}
-              ownCampusCode={processing.ownCampusCode}
-              startDatetime={watch(`${base}.startDatetime`)}
-              endDatetime={watch(`${base}.endDatetime`)}
-              value={processing.values[(campusCode || '').toUpperCase()]}
-              onChange={processing.onChange}
-            />
-          )}
         </fieldset>
+        )}
+
+        {/* Who processes THIS campus — authenticated create only; absent for public submit.
+            Rendered regardless of `hideAdditionalRequirements`: this is a per-campus decision even
+            when the requirements above have moved to request level. */}
+        {processing && (
+          <CampusHostSelectionV2Panel
+            campusCode={campusCode}
+            role={processing.role}
+            ownCampusCode={processing.ownCampusCode}
+            startDatetime={watch(`${base}.startDatetime`)}
+            endDatetime={watch(`${base}.endDatetime`)}
+            value={processing.values[(campusCode || '').toUpperCase()]}
+            onChange={processing.onChange}
+          />
+        )}
       </div>
     </div>
   );

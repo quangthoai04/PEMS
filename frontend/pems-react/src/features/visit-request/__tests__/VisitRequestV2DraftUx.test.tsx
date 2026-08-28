@@ -5,7 +5,7 @@ import {
   saveVisitRequestV2Draft,
   loadVisitRequestV2Draft,
 } from '../utils/visitRequestV2DraftStorage';
-import { createEmptyCampusVisit } from '../utils/visitRequestV2Form';
+import { createEmptyAdditionalRequirements, createEmptyCampusVisit } from '../utils/visitRequestV2Form';
 import type { VisitRequestV2Schema } from '../schema/visitRequestV2.schema';
 
 /**
@@ -744,6 +744,11 @@ describe('a draft is written for anything the user filled in, and for nothing th
   const withCampus = (patch: Partial<VisitRequestV2Schema['campusVisits'][number]>): VisitRequestV2Schema =>
     ({ ...empty(), campusVisits: [{ ...createEmptyCampusVisit('ck-1'), ...patch }] });
 
+  const withAdditional = (
+    patch: Partial<NonNullable<VisitRequestV2Schema['additionalRequirements']>>,
+  ): VisitRequestV2Schema =>
+    ({ ...empty(), additionalRequirements: { ...createEmptyAdditionalRequirements(), ...patch } });
+
   beforeEach(() => localStorage.clear());
 
   it.each([
@@ -752,10 +757,17 @@ describe('a draft is written for anything the user filled in, and for nothing th
     ['a phone number on its own', withRegistrant({ phone: '+84912345678' })],
     ['the working content', withCampus({ workingContent: 'Nội dung làm việc' })],
     ['a visit type that is not the default', withCampus({ visitType: 'MEETING' })],
-    ['a working language that is not the default', withCampus({ workingLanguage: 'EN' })],
-    ['a media-consent answer that is not the default', withCampus({ mediaConsentStatus: 'DECLINED' })],
-    ['a transportation note', withCampus({ transportationNote: 'Xe 16 chỗ' })],
-    ['a note to the campus', withCampus({ notes: 'Ghi chú thêm' })],
+    // Per-campus "Yêu cầu bổ sung" — still checked for backward compatibility with the per-campus
+    // EDIT screens, which keep writing these 4 fields directly onto the campus card.
+    ['a working language that is not the default (per-campus, EDIT)', withCampus({ workingLanguage: 'EN' })],
+    ['a media-consent answer that is not the default (per-campus, EDIT)', withCampus({ mediaConsentStatus: 'DECLINED' })],
+    ['a transportation note (per-campus, EDIT)', withCampus({ transportationNote: 'Xe 16 chỗ' })],
+    ['a note to the campus (per-campus, EDIT)', withCampus({ notes: 'Ghi chú thêm' })],
+    // Request-level "Yêu cầu bổ sung" — the CREATE form's actual source of truth now.
+    ['a working language that is not the default (request-level, CREATE)', withAdditional({ workingLanguage: 'EN' })],
+    ['a media-consent answer that is not the default (request-level, CREATE)', withAdditional({ mediaConsentStatus: 'DECLINED' })],
+    ['a transportation note (request-level, CREATE)', withAdditional({ transportationNote: 'Xe 16 chỗ' })],
+    ['a note to the campus (request-level, CREATE)', withAdditional({ notes: 'Ghi chú thêm' })],
     ['an operational contact email', withCampus({
       operationalContact: { fullName: '', organization: '', jobTitle: '', phone: '', email: 'dm@example.com' },
     })],
@@ -857,9 +869,11 @@ describe('media consent survives the draft round trip', () => {
     campusVisits: [createEmptyCampusVisit('ck-1')],
   });
 
+  // The consent answer now lives at request level (`additionalRequirements`), not on the campus
+  // card — the UI moved, the "born value" comparison did not.
   const withConsent = (status: 'AGREED' | 'DECLINED'): VisitRequestV2Schema => ({
     ...baseline(),
-    campusVisits: [{ ...createEmptyCampusVisit('ck-1'), mediaConsentStatus: status }],
+    additionalRequirements: { ...createEmptyAdditionalRequirements(), mediaConsentStatus: status },
   });
 
   beforeEach(() => { localStorage.clear(); vi.clearAllMocks(); });
@@ -901,7 +915,7 @@ describe('media consent survives the draft round trip', () => {
 
     const restored = loadVisitRequestV2Draft(NS);
     // Sanitising must not drop it on the way out, which is what made the answer look untouched.
-    expect(restored?.data.campusVisits?.[0]?.mediaConsentStatus).toBe('DECLINED');
+    expect(restored?.data.additionalRequirements?.mediaConsentStatus).toBe('DECLINED');
   });
 
   it('MEDIA-DRAFT-05b: a saved "Không đồng ý" is what comes back, not the default', async () => {
