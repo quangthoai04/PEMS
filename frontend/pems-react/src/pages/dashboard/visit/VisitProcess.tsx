@@ -538,6 +538,9 @@ export function VisitProcess() {
   const [plannedStartDraft, setPlannedStartDraft] = useState('');
   const [plannedEndDraft, setPlannedEndDraft] = useState('');
   const [isEditingPlannedTime, setIsEditingPlannedTime] = useState(false);
+  // Same "end must be after start" rule saveAgenda() enforces server-side — checked live here too,
+  // so the inline pill can never be closed ("Xong") showing a reversed window.
+  const plannedTimeInvalid = !!plannedStartDraft && !!plannedEndDraft && plannedEndDraft <= plannedStartDraft;
 
   // ── Datetime serialization (PEMS rule: MySQL DATETIME is LOCAL wall-clock, never UTC). ──
   // The API returns "YYYY-MM-DDTHH:mm:ss" (or "YYYY-MM-DD HH:mm:ss") with no timezone. We slice it
@@ -1410,32 +1413,56 @@ export function VisitProcess() {
                                   Editable here; takes effect together with the agenda on "Lưu lịch trình". */}
                               {canEditAgenda && (
                                 isEditingPlannedTime ? (
-                                  <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1">
-                                    <input
-                                      type="datetime-local"
-                                      value={plannedStartDraft}
-                                      onChange={(e) => setPlannedStartDraft(e.target.value)}
-                                      className="h-7 rounded border border-slate-200 px-1 text-xs font-normal text-slate-700 outline-none focus:border-[#004c91]"
-                                    />
-                                    <span className="text-xs font-bold text-slate-400">→</span>
-                                    <input
-                                      type="datetime-local"
-                                      value={plannedEndDraft}
-                                      onChange={(e) => setPlannedEndDraft(e.target.value)}
-                                      className="h-7 rounded border border-slate-200 px-1 text-xs font-normal text-slate-700 outline-none focus:border-[#004c91]"
-                                    />
-                                    <button type="button" onClick={() => setIsEditingPlannedTime(false)}
-                                      className="px-1 text-xs font-bold text-emerald-600 hover:underline">Xong</button>
-                                    <button type="button"
-                                      onClick={() => {
-                                        setPlannedStartDraft(toDatetimeLocalInputValue(detail?.plannedStartAt));
-                                        setPlannedEndDraft(toDatetimeLocalInputValue(detail?.plannedEndAt));
-                                        setIsEditingPlannedTime(false);
-                                      }}
-                                      className="px-1 text-xs font-bold text-slate-400 hover:underline">Hủy</button>
+                                  <div className="flex flex-col gap-1">
+                                    <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1">
+                                      <input
+                                        type="datetime-local"
+                                        value={plannedStartDraft}
+                                        onChange={(e) => setPlannedStartDraft(e.target.value)}
+                                        className={`h-7 rounded border px-1 text-xs font-normal text-slate-700 outline-none focus:border-[#004c91] ${plannedTimeInvalid ? 'border-red-400' : 'border-slate-200'}`}
+                                      />
+                                      <span className="text-xs font-bold text-slate-400">→</span>
+                                      <input
+                                        type="datetime-local"
+                                        value={plannedEndDraft}
+                                        onChange={(e) => setPlannedEndDraft(e.target.value)}
+                                        className={`h-7 rounded border px-1 text-xs font-normal text-slate-700 outline-none focus:border-[#004c91] ${plannedTimeInvalid ? 'border-red-400' : 'border-slate-200'}`}
+                                      />
+                                      <button type="button"
+                                        disabled={plannedTimeInvalid}
+                                        onClick={() => {
+                                          // Validated live above — a disabled button cannot fire this, but the guard
+                                          // stays in case disabled styling is ever bypassed (e.g. keyboard Enter).
+                                          if (plannedTimeInvalid) {
+                                            pushToast('error', 'Thời gian dự kiến kết thúc phải sau thời gian bắt đầu.');
+                                            return;
+                                          }
+                                          setIsEditingPlannedTime(false);
+                                        }}
+                                        className="px-1 text-xs font-bold text-emerald-600 hover:underline disabled:cursor-not-allowed disabled:text-slate-300 disabled:no-underline">Xong</button>
+                                      <button type="button"
+                                        onClick={() => {
+                                          setPlannedStartDraft(toDatetimeLocalInputValue(detail?.plannedStartAt));
+                                          setPlannedEndDraft(toDatetimeLocalInputValue(detail?.plannedEndAt));
+                                          setIsEditingPlannedTime(false);
+                                        }}
+                                        className="px-1 text-xs font-bold text-slate-400 hover:underline">Hủy</button>
+                                    </div>
+                                    {plannedTimeInvalid && (
+                                      <p className="text-[11px] font-semibold text-red-500">Thời gian kết thúc phải sau thời gian bắt đầu.</p>
+                                    )}
+                                    <p className="text-[11px] text-slate-400">Nhấn "Lưu lịch trình" bên dưới để lưu thay đổi này.</p>
                                   </div>
                                 ) : (
-                                  <button type="button" onClick={() => setIsEditingPlannedTime(true)}
+                                  <button type="button"
+                                    onClick={() => {
+                                      setIsEditingPlannedTime(true);
+                                      // The planned window is only persisted together with the agenda rows via
+                                      // "Lưu lịch trình" — that button is hidden outside agenda edit mode, so
+                                      // opening this editor must also open that mode or "Xong" strands an
+                                      // unsaved draft (it used to: edit → Xong → F5 → change lost).
+                                      setIsEditingAgenda(true);
+                                    }}
                                     className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 outline-none transition hover:border-[#004c91] hover:text-[#004c91]">
                                     <Calendar className="h-3.5 w-3.5" />
                                     Dự kiến: {formatPlannedWindow(plannedStartDraft, plannedEndDraft)}
