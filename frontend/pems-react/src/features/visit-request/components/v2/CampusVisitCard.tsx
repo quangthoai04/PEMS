@@ -1285,17 +1285,16 @@ export const CampusVisitCard: React.FC<Props> = ({
   ) => {
     if (rows.length === 0 && kind === 'supportTeam') {
       return (
-        <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50 p-6 text-center">
-          <p className="text-sm font-normal text-slate-500">
-            {t('visitRequestV2:person.noSupportTeam')}
-          </p>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm text-slate-500">
+          <span>{t('visitRequestV2:person.noSupportTeam')}</span>
           {onAddRow && (
             <button
               type="button"
-              className="mt-3 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-[#004c91] transition-colors hover:bg-[#004c91]/5 hover:border-[#004c91]/30"
               onClick={onAddRow}
             >
-              <Plus className="h-4 w-4" /> {t('visitRequestV2:card.addSupport')}
+              <Plus className="h-3.5 w-3.5" />
+              <span>{t('visitRequestV2:card.addSupport')}</span>
             </button>
           )}
         </div>
@@ -1594,7 +1593,7 @@ export const CampusVisitCard: React.FC<Props> = ({
 
         {/* Content */}
         <div className="grid grid-cols-12 gap-x-6 gap-y-5">
-          <FormField className="col-span-12 lg:col-span-7" label={t('visitRequestV2:card.delegationName')} required error={fieldError('delegationName')} showValidIcon={false}>
+          <FormField className="col-span-12 lg:col-span-6" label={t('visitRequestV2:card.delegationName')} required error={fieldError('delegationName')} showValidIcon={false}>
             <Controller
               name={`${base}.delegationName`}
               control={control}
@@ -1611,7 +1610,7 @@ export const CampusVisitCard: React.FC<Props> = ({
               )}
             />
           </FormField>
-          <FormField className="col-span-12 lg:col-span-5" label={t('visitRequestV2:card.visitType')} required error={fieldError('visitType')} showValidIcon={false}>
+          <FormField className="col-span-12 lg:col-span-6" label={t('visitRequestV2:card.visitType')} required error={fieldError('visitType')} showValidIcon={false}>
             <select {...register(`${base}.visitType`)} className={inputCls(!!fieldError('visitType'), false, false)}>
               {VISIT_TYPES.map(vt => (
                 <option key={vt} value={vt}>
