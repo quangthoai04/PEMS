@@ -122,8 +122,7 @@ describe('VisitRequestFormV2 — campus limit and member tables', () => {
     render(<VisitRequestFormV2 mode="public" onSuccess={vi.fn()} />);
 
     // A card opens with one guest row and NO support row, and an empty support list is drawn as a
-    // placeholder rather than a headerless table (commit f172e531). Add one so there is a table to
-    // check — the column set is the assertion, and it only exists once the section has a row.
+    // light gray container. Add one so there is a table to check — the column set is the assertion.
     expect(screen.getByText('visitRequestV2:person.noSupportTeam')).toBeInTheDocument();
     fireEvent.click(screen.getAllByText('visitRequestV2:card.addSupport')[0]);
 

@@ -76,14 +76,14 @@ function MembersTable({ members, emptyText }: { members: VisitProcessGuestMember
   }
   return (
     <div className="overflow-x-auto rounded-md border border-gray-200">
-      <table className="min-w-full text-[13px]">
+      <table className="w-full table-fixed text-[13px]">
         <thead className="border-b border-gray-200 bg-gray-50 text-left text-xs text-gray-500">
           <tr>
-            <th className="px-2.5 py-1.5 font-semibold">STT</th>
-            <th className="px-2.5 py-1.5 font-semibold">Họ và tên</th>
-            <th className="px-2.5 py-1.5 font-semibold">Chức vụ</th>
-            <th className="px-2.5 py-1.5 font-semibold">Đơn vị</th>
-            <th className="px-2.5 py-1.5 font-semibold">Quốc tịch</th>
+            <th className="w-12 px-2.5 py-1.5 font-semibold">STT</th>
+            <th className="w-1/4 px-2.5 py-1.5 font-semibold">Họ và tên</th>
+            <th className="w-1/4 px-2.5 py-1.5 font-semibold">Chức vụ</th>
+            <th className="w-1/4 px-2.5 py-1.5 font-semibold">Đơn vị</th>
+            <th className="w-1/4 px-2.5 py-1.5 font-semibold">Quốc tịch</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
@@ -169,13 +169,9 @@ export function DelegationInfoReadOnly({ summary }: { summary?: VisitProcessRequ
         </div>
       </div>
 
-      <div className="space-y-1">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
         <Field label="Mục đích thăm" value={summary?.purpose} multiline />
         <Field label="Nội dung làm việc" value={summary?.workingContent} multiline />
-        {/* Rendered unconditionally, like every other field above. A row that vanishes when the guest
-            left it blank reads as "this form never asked", and the host planning the visit cannot tell
-            that from "asked and nothing to report" — which is exactly what they need to know before
-            they stop looking for dietary or accessibility requirements. */}
         <Field label="Nhận diện phương tiện di chuyển" value={summary?.transportationNote} multiline />
         <Field label="Ghi chú gửi FPTU" value={summary?.notes} multiline />
       </div>

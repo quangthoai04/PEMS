@@ -52,7 +52,7 @@ public sealed class RespondVisitParticipantInvitationCommandHandler
         // guarantees a non-empty 5–1000 char decline reason here.
         var participant = await VisitInvitationResponse.ApplyCoreAsync(
             _db, _lockService, userId, request.ParticipantId, requiredStatus: null,
-            request.Accept, request.DeclineReason, now, cancellationToken);
+            request.Accept, request.DeclineReason, request.Note, now, cancellationToken);
         var newStatus = participant.Status;
 
         // A Portal response retires any pending emailed link for this row (the token side effect is

@@ -12,8 +12,8 @@ namespace PEMS.Api.Email;
 public static class EmailActionHtmlPages
 {
     /// <summary>The GET landing: a confirm page for a still-valid token, or a terminal message.
-    /// ACCEPT shows a one-click confirm button; DECLINE shows a form requiring a reason (so a GET
-    /// click never mutates data — only the POST with a valid reason does).</summary>
+    /// ACCEPT shows a confirm button with an optional note field; DECLINE shows a form requiring a
+    /// reason (so a GET click never mutates data — only the POST does).</summary>
     public static string RenderLanding(EmailActionInfoResult info)
     {
         if (info.Status != EmailActionViewStatuses.Valid)
@@ -45,13 +45,16 @@ public static class EmailActionHtmlPages
             return Layout(wording.DeclineTitle, declineContent, accent);
         }
 
-        // ACCEPT: one-click confirm.
+        // ACCEPT: confirm button, plus an optional note the invitee can leave for the host.
         var content = $@"
       <p style=""color:#374151;font-size:15px"">Xin chào <strong>{HE(info.RecipientName)}</strong>,</p>
       <p style=""color:#374151;font-size:14px"">{wording.AcceptIntro}</p>
       {details}
-      <form method=""post"" style=""margin-top:8px"">
-        <button type=""submit"" style=""display:inline-block;background:{accent};color:#fff;border:none;cursor:pointer;font-weight:bold;font-size:15px;padding:14px 28px;border-radius:10px"">{HE(wording.AcceptButton)}</button>
+      <form method=""post"" style=""margin-top:8px;text-align:left"">
+        <label style=""display:block;font-size:13px;font-weight:bold;color:#374151;margin-bottom:6px"">Ghi chú thêm (không bắt buộc)</label>
+        <textarea name=""note"" maxlength=""1000"" rows=""3"" placeholder=""Ví dụ: Tôi sẽ có mặt sớm 15 phút...""
+          style=""width:100%;box-sizing:border-box;padding:12px;border:1px solid #d1d5db;border-radius:10px;font-size:14px;font-family:inherit;resize:vertical;outline:none""></textarea>
+        <button type=""submit"" style=""margin-top:14px;display:block;width:100%;background:{accent};color:#fff;border:none;cursor:pointer;font-weight:bold;font-size:15px;padding:14px 28px;border-radius:10px"">{HE(wording.AcceptButton)}</button>
       </form>
       <p style=""color:#9ca3af;font-size:12px;margin-top:14px"">Liên kết này chỉ sử dụng được một lần.</p>";
 

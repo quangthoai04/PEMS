@@ -9,8 +9,11 @@ namespace PEMS.Application.EmailActions;
 /// twice. Never throws for token problems (returns a status) so the public page can render cleanly.
 /// A DECLINE must carry <see cref="DeclineReason"/> (5–1000 chars after trim); a missing/invalid
 /// reason returns REASON_REQUIRED and leaves the token untouched so the user can retry.
+/// <see cref="Note"/> is the ACCEPT counterpart: optional, applied only when the token's intended
+/// action is ACCEPT, and ignored otherwise.
 /// </summary>
-public sealed record ExecuteEmailActionCommand(string RawToken, string? Ip, string? UserAgent, string? DeclineReason = null)
+public sealed record ExecuteEmailActionCommand(
+    string RawToken, string? Ip, string? UserAgent, string? DeclineReason = null, string? Note = null)
     : IRequest<EmailActionExecuteResult>;
 
 public sealed class EmailActionExecuteResult

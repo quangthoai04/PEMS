@@ -607,6 +607,9 @@ export function ParticipantInvitationSection({
                 {p.status === 'DECLINED' && p.note && (
                   <div className="mt-2 text-xs italic text-red-500">Lý do từ chối: {p.note}</div>
                 )}
+                {p.status === 'ACCEPTED' && p.note && (
+                  <div className="mt-2 text-xs italic text-emerald-600">Ghi chú khi xác nhận: {p.note}</div>
+                )}
               </div>
             ))}
           </div>
@@ -771,6 +774,9 @@ function ParticipantList({
             )}
             {p.status === 'DECLINED' && p.note && (
               <div className="mt-1 text-xs italic text-red-500">Lý do từ chối: {p.note}</div>
+            )}
+            {p.status === 'ACCEPTED' && p.note && (
+              <div className="mt-1 text-xs italic text-emerald-600">Ghi chú khi xác nhận: {p.note}</div>
             )}
           </div>
           <div className="flex items-center gap-2">

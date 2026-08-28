@@ -1510,6 +1510,9 @@ export interface VisitInvitation {
 export interface RespondInvitationPayload {
   accept: boolean;
   declineReason?: string | null;
+  /** Optional remark left by the invitee when accepting (accept=true only). Stored on the same
+   * visit_participants.note column declineReason uses — the two never coexist on one call. */
+  note?: string | null;
 }
 
 export interface RespondInvitationResult {

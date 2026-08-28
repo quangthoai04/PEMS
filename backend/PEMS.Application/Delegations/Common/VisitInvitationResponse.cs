@@ -91,10 +91,16 @@ public static class VisitInvitationResponse
     /// always passes an exact value, because a token minted for one context (e.g. a direct-invite
     /// ACCEPT link) must not succeed against a row that has since moved to the other (e.g. ASSIGNED).
     /// </param>
+    /// <param name="note">
+    /// Only applied when <paramref name="accept"/> is true: an optional remark the invitee leaves for
+    /// the host, trimmed and stored on the same <c>visit_participants.note</c> column
+    /// <paramref name="declineReason"/> uses on the decline branch (the two never coexist on one
+    /// response, since only one branch of the <c>if (accept)</c> below ever runs). Ignored on decline.
+    /// </param>
     /// <returns>The mutated participant, with its <c>VisitInstance</c> (and request) loaded.</returns>
     public static async Task<VisitParticipant> ApplyCoreAsync(
         IApplicationDbContext db, IUserMutationLockService locks, ulong actorUserId, ulong participantId,
-        string? requiredStatus, bool accept, string? declineReason, System.DateTime now, CancellationToken ct)
+        string? requiredStatus, bool accept, string? declineReason, string? note, System.DateTime now, CancellationToken ct)
     {
         // The FKs below are structural (never change on an existing row), so reading them unlocked to
         // discover which tier-2/3 rows to lock is safe — it is the STATUS columns that race, not these.
@@ -159,6 +165,9 @@ public static class VisitInvitationResponse
         if (accept)
         {
             participant.Status = ParticipantStatuses.Accepted;
+            var trimmedNote = note?.Trim();
+            if (!string.IsNullOrWhiteSpace(trimmedNote))
+                participant.Note = trimmedNote;
         }
         else
         {

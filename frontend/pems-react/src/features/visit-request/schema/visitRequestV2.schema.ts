@@ -168,6 +168,27 @@ const noHtml = (t: ValidationTranslator) => (v: string | undefined) =>
   !v || (!v.includes('<') && !v.includes('>'));
 
 /**
+ * "Yêu cầu bổ sung" — working language, media consent, transportation note and the note to FPTU.
+ * Filled ONCE for the whole visit (request-level), not per campus. Shared by
+ * {@link buildCampusVisitSchema} (which still carries these 4 fields for backward compatibility —
+ * the backend contract, `V2CampusVisitForm`, still expects them per campus; the mapping from here
+ * onto every campus happens in `buildV2CreatePayload`, not in the form) and by
+ * {@link buildVisitRequestV2Schema}'s own request-level field, so the two can never validate these
+ * fields differently.
+ */
+const buildAdditionalRequirementsSchema = (t: ValidationTranslator) => z.object({
+  workingLanguage: z.enum(['EN', 'VI']),
+  transportationNote: bounded(z.string(), 2000, t('fields.transportationNote'), t)
+    .refine(noHtml(t), { message: t('noHtmlChars') })
+    .optional()
+    .default(''),
+  mediaConsentStatus: z.enum(['AGREED', 'DECLINED']),
+  // "Ghi chú gửi FPTU". Bounded only — deliberately NOT conditioned on mediaConsentStatus, because
+  // it is the guest's general remark about the visit, not a justification for the consent answer.
+  notes: bounded(z.string(), 2000, t('fields.notes'), t).optional().default(''),
+});
+
+/**
  * One campus card. `clientKey` is a STABLE client-generated identity used as the React
  * key and preserved in drafts — array index is never used as identity, so removing or
  * reordering campuses cannot re-associate typed data with the wrong card.
@@ -260,15 +281,12 @@ export const buildCampusVisitSchema = (minAdvanceHours: number, t: ValidationTra
      */
     operationalContactSource: z.enum(['MEMBER', 'EXTERNAL']).nullable().optional().default(null),
 
-    workingLanguage: z.enum(['EN', 'VI']),
-    transportationNote: bounded(z.string(), 2000, t('fields.transportationNote'), t)
-      .refine(noHtml(t), { message: t('noHtmlChars') })
-      .optional()
-      .default(''),
-    mediaConsentStatus: z.enum(['AGREED', 'DECLINED']),
-    // "Ghi chú gửi FPTU". Bounded only — deliberately NOT conditioned on mediaConsentStatus, because
-    // it is the guest's general remark about the campus, not a justification for the consent answer.
-    notes: bounded(z.string(), 2000, t('fields.notes'), t).optional().default(''),
+    // Still carried per campus for backward compatibility with the backend contract and with the
+    // per-campus EDIT screens (EditVisitRequestV2Page/EditPendingCampusV2Page), which still let each
+    // EXISTING campus diverge. On CREATE, the UI collects these once at request level
+    // (`VisitRequestV2Schema.additionalRequirements`) and `buildV2CreatePayload` copies that answer
+    // onto every campus at submit time — these per-campus fields simply stay at their born defaults.
+    ...buildAdditionalRequirementsSchema(t).shape,
   })
   .superRefine((data, ctx) => {
     if (data.visitType === 'OTHER' && (!data.visitTypeOther || data.visitTypeOther.trim() === '')) {
@@ -435,6 +453,16 @@ export const buildVisitRequestV2Schema = (
     }),
     partnerSelectionMode: z.enum(['EXISTING_PARTNER', 'NEW_ORGANIZATION']).default('NEW_ORGANIZATION'),
     partnerId: z.number().nullable().optional(),
+    /**
+     * "Yêu cầu bổ sung" filled ONCE for the whole visit, not per campus (plan: request-level
+     * additional requirements). Optional at the schema level — never required by `.min`/enum-absence
+     * — purely so the SAME schema stays usable by the per-campus EDIT screens
+     * (`EditVisitRequestV2Page`/`EditPendingCampusV2Page`, both built from `buildVisitRequestV2Schema`
+     * or its per-campus sibling), which never populate this field and keep editing the per-campus
+     * copies instead. The CREATE form always seeds it via `DEFAULT_VISIT_REQUEST_V2_VALUES`, so its
+     * own required sub-fields (workingLanguage/mediaConsentStatus enums) are enforced in practice.
+     */
+    additionalRequirements: buildAdditionalRequirementsSchema(t).optional(),
     campusVisits: z
       .array(buildCampusVisitSchema(minAdvanceHours, t))
       .min(1, t('campusRequired'))

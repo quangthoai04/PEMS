@@ -106,6 +106,17 @@ interface Props {
    */
   contactReadOnly?: boolean;
   /**
+   * Hides the "Yêu cầu bổ sung" section (workingLanguage/mediaConsentStatus/transportationNote/
+   * notes) on THIS card. Set by `VisitRequestFormV2` (the create form), which now collects these
+   * once at request level and copies the answer onto every campus at submit time
+   * (`buildV2CreatePayload`) — rendering them again per card would let the two silently disagree.
+   *
+   * Left false (the default) for the per-campus EDIT screens (`EditVisitRequestV2Page`/
+   * `EditPendingCampusV2Page`), where an EXISTING campus's own answer is exactly what stays
+   * editable here.
+   */
+  hideAdditionalRequirements?: boolean;
+  /**
    * Authenticated create only: who will process THIS campus. Omitted entirely for the public
    * form, which never renders internal processing controls and never sends a processing intent.
    */
@@ -140,6 +151,7 @@ export const CampusVisitCard: React.FC<Props> = ({
   showErrors,
   minAdvanceHours = V2_MIN_ADVANCE_HOURS_CREATE,
   contactReadOnly = false,
+  hideAdditionalRequirements = false,
   processing,
 }) => {
   const { t } = useTranslation(['visitRequestV2', 'visitRequest']);
@@ -1273,17 +1285,16 @@ export const CampusVisitCard: React.FC<Props> = ({
   ) => {
     if (rows.length === 0 && kind === 'supportTeam') {
       return (
-        <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50 p-6 text-center">
-          <p className="text-sm font-normal text-slate-500">
-            {t('visitRequestV2:person.noSupportTeam')}
-          </p>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm text-slate-500">
+          <span>{t('visitRequestV2:person.noSupportTeam')}</span>
           {onAddRow && (
             <button
               type="button"
-              className="mt-3 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-[#004c91] transition-colors hover:bg-[#004c91]/5 hover:border-[#004c91]/30"
               onClick={onAddRow}
             >
-              <Plus className="h-4 w-4" /> {t('visitRequestV2:card.addSupport')}
+              <Plus className="h-3.5 w-3.5" />
+              <span>{t('visitRequestV2:card.addSupport')}</span>
             </button>
           )}
         </div>
@@ -1582,7 +1593,7 @@ export const CampusVisitCard: React.FC<Props> = ({
 
         {/* Content */}
         <div className="grid grid-cols-12 gap-x-6 gap-y-5">
-          <FormField className="col-span-12 lg:col-span-7" label={t('visitRequestV2:card.delegationName')} required error={fieldError('delegationName')} showValidIcon={false}>
+          <FormField className="col-span-12 lg:col-span-6" label={t('visitRequestV2:card.delegationName')} required error={fieldError('delegationName')} showValidIcon={false}>
             <Controller
               name={`${base}.delegationName`}
               control={control}
@@ -1599,7 +1610,7 @@ export const CampusVisitCard: React.FC<Props> = ({
               )}
             />
           </FormField>
-          <FormField className="col-span-12 lg:col-span-5" label={t('visitRequestV2:card.visitType')} required error={fieldError('visitType')} showValidIcon={false}>
+          <FormField className="col-span-12 lg:col-span-6" label={t('visitRequestV2:card.visitType')} required error={fieldError('visitType')} showValidIcon={false}>
             <select {...register(`${base}.visitType`)} className={inputCls(!!fieldError('visitType'), false, false)}>
               {VISIT_TYPES.map(vt => (
                 <option key={vt} value={vt}>
@@ -2569,7 +2580,9 @@ export const CampusVisitCard: React.FC<Props> = ({
           )}
         </fieldset>
 
-        {/* Additional requirements */}
+        {/* Additional requirements — hidden on the create form, which now collects this once at
+            request level (see `hideAdditionalRequirements` above). */}
+        {!hideAdditionalRequirements && (
         <fieldset className="mb-1">
           <legend className="mb-3 text-sm font-extrabold text-slate-900">{t('visitRequestV2:card.additional')}</legend>
           <div className="grid grid-cols-12 gap-x-4 xl:gap-x-6 gap-y-4">
@@ -2639,20 +2652,23 @@ export const CampusVisitCard: React.FC<Props> = ({
               />
             </FormField>
           </div>
-
-          {/* Who processes THIS campus — authenticated create only; absent for public submit. */}
-          {processing && (
-            <CampusHostSelectionV2Panel
-              campusCode={campusCode}
-              role={processing.role}
-              ownCampusCode={processing.ownCampusCode}
-              startDatetime={watch(`${base}.startDatetime`)}
-              endDatetime={watch(`${base}.endDatetime`)}
-              value={processing.values[(campusCode || '').toUpperCase()]}
-              onChange={processing.onChange}
-            />
-          )}
         </fieldset>
+        )}
+
+        {/* Who processes THIS campus — authenticated create only; absent for public submit.
+            Rendered regardless of `hideAdditionalRequirements`: this is a per-campus decision even
+            when the requirements above have moved to request level. */}
+        {processing && (
+          <CampusHostSelectionV2Panel
+            campusCode={campusCode}
+            role={processing.role}
+            ownCampusCode={processing.ownCampusCode}
+            startDatetime={watch(`${base}.startDatetime`)}
+            endDatetime={watch(`${base}.endDatetime`)}
+            value={processing.values[(campusCode || '').toUpperCase()]}
+            onChange={processing.onChange}
+          />
+        )}
       </div>
     </div>
   );

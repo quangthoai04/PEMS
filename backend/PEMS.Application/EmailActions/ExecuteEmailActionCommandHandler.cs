@@ -204,7 +204,7 @@ public sealed class ExecuteEmailActionCommandHandler
             // VisitInvitationResponse's class remarks).
             respondedParticipant = await PEMS.Application.Delegations.Common.VisitInvitationResponse.ApplyCoreAsync(
                 _db, _locks, actorUserId: participant.UserId, participant.ParticipantId, requiredStatus,
-                isAccept, declineNote, now, cancellationToken);
+                isAccept, declineNote, request.Note, now, cancellationToken);
         }
         catch (ConflictException)
         {

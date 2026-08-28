@@ -58,7 +58,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.DeclineInvitation
 
             var p = await VisitInvitationResponse.ApplyCoreAsync(
                 _context, _lockService, userId, request.ParticipantId, requiredStatus: null,
-                accept: false, request.Reason, now, cancellationToken);
+                accept: false, request.Reason, note: null, now, cancellationToken);
 
             // A Portal response retires any pending emailed link for this row (the token side effect is
             // channel-specific — see VisitInvitationResponse's class remarks).

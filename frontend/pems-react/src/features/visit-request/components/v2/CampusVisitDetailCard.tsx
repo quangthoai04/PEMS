@@ -10,7 +10,7 @@ import ContactProfileSyncPrompt from '../ContactProfileSyncPrompt';
 import InstanceResubmitPanel from '../InstanceResubmitPanel';
 import OperationalContactReadOnly from './OperationalContactReadOnly';
 import ReceptionHostReadOnly from './ReceptionHostReadOnly';
-import { formatVietnamDateTime } from '../../../../shared/utils/vietnamTime';
+import { formatSmartVietnamRange, formatVietnamDateTime } from '../../../../shared/utils/vietnamTime';
 import { VisitStatusBadge } from './shared/VisitStatusBadge';
 import { ReadOnlyInfoGrid, type InfoRow } from './shared/ReadOnlyInfoGrid';
 import { PersonListTable } from './shared/PersonListTable';
@@ -112,6 +112,8 @@ export const CampusVisitDetailCard: React.FC<Props> = ({
   const rows: InfoRow[] = [
     { label: t('visitRequestV2:card.delegationName'), value: campus.delegationName },
     { label: t('visitRequestV2:card.visitType'), value: visitTypeLabel },
+    { label: t('visitRequestV2:card.purpose'), value: campus.purpose },
+    { label: t('visitRequestV2:card.workingContent'), value: campus.workingContent },
     {
       label: t('visitRequestV2:card.workingLanguage'),
       value: campus.workingLanguage === 'VI'
@@ -120,16 +122,12 @@ export const CampusVisitDetailCard: React.FC<Props> = ({
     },
     {
       label: t('visitRequestV2:card.mediaConsent'),
-      // The consent answer alone. It used to carry the media note appended after an em dash, which
-      // read as one fact; they are two, and the general note is its own row below.
       value: campus.mediaConsentStatus === 'AGREED'
         ? t('visitRequestV2:card.mediaAgreed')
         : t('visitRequestV2:card.mediaDeclined'),
     },
     { label: t('visitRequestV2:card.transportationNote'), value: campus.transportationNote },
-    { label: t('visitRequestV2:card.purpose'), value: campus.purpose, multiline: true },
-    { label: t('visitRequestV2:card.workingContent'), value: campus.workingContent, multiline: true },
-    { label: t('visitRequestV2:card.notes'), value: campus.notes, multiline: true },
+    { label: t('visitRequestV2:card.notes'), value: campus.notes },
   ];
 
   return (
@@ -138,11 +136,7 @@ export const CampusVisitDetailCard: React.FC<Props> = ({
       aria-label={t('visitRequestV2:detail.cardAria', { campus: campus.campusName })}
       className="overflow-hidden rounded-xl border border-[#004c91]/20 bg-white shadow-sm"
     >
-      {/* Campus header — the campus, where it stands, and when.
-          Everything here stays visible when the card is collapsed, deliberately: which campus, what
-          state it is in, whether a change is waiting and when it happens are exactly the facts
-          somebody scans a multi-campus request for, and a closed row that showed only a name would
-          force them to open all three to find the one they wanted. */}
+      {/* Campus header — the campus, where it stands, and when. */}
       {React.createElement(
         collapsible ? 'button' : 'div',
         {
@@ -175,9 +169,7 @@ export const CampusVisitDetailCard: React.FC<Props> = ({
           )}
           <span className="ml-auto flex items-center gap-1 text-xs font-normal text-white/90">
             <Clock className="h-3.5 w-3.5" aria-hidden />
-            <time dateTime={campus.plannedStartAt}>{formatVietnamDateTime(campus.plannedStartAt)}</time>
-            {' → '}
-            <time dateTime={campus.plannedEndAt}>{formatVietnamDateTime(campus.plannedEndAt)}</time>
+            <span>{formatSmartVietnamRange(campus.plannedStartAt, campus.plannedEndAt)}</span>
           </span>
           {collapsible && (
             <ChevronDown

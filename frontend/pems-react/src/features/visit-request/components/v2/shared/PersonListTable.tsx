@@ -55,16 +55,16 @@ export const PersonListTable: React.FC<Props> = ({
           {/* Desktop: a real table. It scrolls inside its own wrapper so a long organisation name
               never forces the whole page sideways. */}
           <div className="hidden overflow-x-auto rounded-lg border border-slate-200 sm:block">
-            <table className="min-w-full text-left text-[13px]">
+            <table className="w-full table-fixed text-left text-[13px]">
               <thead className="bg-[#004c91] text-white">
                 <tr>
                   <th scope="col" className="w-12 px-2.5 py-2 font-semibold">{t('visitRequestV2:person.ordinal')}</th>
-                  <th scope="col" className="px-2.5 py-2 font-semibold">{t('visitRequestV2:person.fullName')}</th>
-                  <th scope="col" className="px-2.5 py-2 font-semibold">{t('visitRequestV2:person.jobTitle')}</th>
-                  <th scope="col" className="px-2.5 py-2 font-semibold">{t('visitRequestV2:person.organization')}</th>
-                  <th scope="col" className="px-2.5 py-2 font-semibold">{t('visitRequestV2:person.nationality')}</th>
+                  <th scope="col" className="w-1/4 px-2.5 py-2 font-semibold">{t('visitRequestV2:person.fullName')}</th>
+                  <th scope="col" className="w-1/4 px-2.5 py-2 font-semibold">{t('visitRequestV2:person.jobTitle')}</th>
+                  <th scope="col" className="w-1/4 px-2.5 py-2 font-semibold">{t('visitRequestV2:person.organization')}</th>
+                  <th scope="col" className="w-1/4 px-2.5 py-2 font-semibold">{t('visitRequestV2:person.nationality')}</th>
                   {renderActions && (
-                    <th scope="col" className="px-2.5 py-2 font-semibold">{actionsLabel}</th>
+                    <th scope="col" className="w-24 px-2.5 py-2 font-semibold">{actionsLabel}</th>
                   )}
                 </tr>
               </thead>

@@ -289,6 +289,20 @@
     "hideSubmitted": "Hide what you submitted",
     "close": "Close",
     "toast": "Your visit request was submitted.",
+    "status": {
+      "PENDING_CONTACT_CONFIRMATION": "Processing",
+      "WAITING_CONTACT_CONFIRMATION": "Processing",
+      "PENDING_APPROVAL": "Pending approval",
+      "WAITING_REQUEST_APPROVAL": "Pending approval",
+      "PENDING": "Processing",
+      "PARTIALLY_APPROVED": "Pending approval",
+      "APPROVED": "Approved",
+      "ASSIGNED": "Approved",
+      "REJECTED": "Rejected",
+      "CANCELLED": "Cancelled",
+      "CLOSED": "Completed",
+      "UNKNOWN": "{{status}}"
+    },
     "copyCode": "Copy request code",
     "codeCopied": "Request code copied.",
     "codeCopyFailed": "Your browser blocked automatic copying. Your request code: {{code}}"
