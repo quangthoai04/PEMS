@@ -97,6 +97,25 @@ export function formatVietnamTime(
   return `${p.hour}:${p.minute}`;
 }
 
+/** Smart range format: "dd/MM/yyyy | HH:mm - HH:mm" if same day, else "dd/MM/yyyy HH:mm → dd/MM/yyyy HH:mm". */
+export function formatSmartVietnamRange(
+  startValue: string | Date | null | undefined,
+  endValue: string | Date | null | undefined,
+  options?: { fallback?: string },
+): string {
+  const startDate = parseApiDate(startValue);
+  const endDate = parseApiDate(endValue);
+  if (!startDate || !endDate) return options?.fallback ?? '—';
+  const startD = formatVietnamDate(startDate);
+  const endD = formatVietnamDate(endDate);
+  const startT = formatVietnamTime(startDate);
+  const endT = formatVietnamTime(endDate);
+  if (startD === endD) {
+    return `${startD} | ${startT} - ${endT}`;
+  }
+  return `${startD} ${startT} → ${endD} ${endT}`;
+}
+
 /**
  * Locale-aware long form (e.g. "12 tháng 7, 2026 20:00") — timezone is ALWAYS Vietnam;
  * only the wording follows the locale.
