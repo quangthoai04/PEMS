@@ -186,9 +186,19 @@ public static class VisitRequestOwnership
         => IsRegistrant(visit, userId) || IsOperationalContact(instance, userId);
 
     /// <summary>
-    /// The global confirmation gate. While this is true NO Staff Leader of ANY campus may see or
-    /// process the request — including a campus whose own contact is already confirmed, and
-    /// including the case where the registrant is that campus's own Staff Leader.
+    /// The global confirmation gate. While this is true, Staff Leaders may VIEW a request within
+    /// their normal responsibility scope, but NO Staff Leader of ANY campus may approve or reject
+    /// it — including a campus whose own contact is already confirmed, and including the case where
+    /// the registrant is that campus's own Staff Leader.
+    ///
+    /// <para>
+    /// Consume it for approval, rejection, and anything that presupposes a decision is due (the
+    /// host picker, a "there is something to review" announcement). Do NOT consume it as a
+    /// visibility exclusion: a leader who cannot yet decide still needs to know the request exists,
+    /// and the read paths deliberately no longer ask this question. What stops a stranger reading
+    /// the request is the campus responsibility rule (<see cref="IsCampusLeader"/>), which this
+    /// change did not touch.
+    /// </para>
     /// </summary>
     public static bool IsBehindContactGate(VisitRequest visit)
         => visit.Status == VisitRequestStatuses.PendingContactConfirmation;

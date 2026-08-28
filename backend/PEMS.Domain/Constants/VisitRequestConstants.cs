@@ -5,10 +5,18 @@ namespace PEMS.Domain.Constants;
 public static class VisitRequestStatuses
 {
     /// <summary>
-    /// At least one active campus has no confirmed operational contact. This is the GLOBAL GATE:
-    /// while a request is here, NO Staff Leader of ANY campus may see or process it — not even a
-    /// campus whose own contact is already confirmed, and not even when the registrant is that
-    /// campus's own Staff Leader.
+    /// At least one active campus has no confirmed operational contact. This is the GLOBAL DECISION
+    /// GATE: while a request is here, NO Staff Leader of ANY campus may APPROVE or REJECT it — not
+    /// even a campus whose own contact is already confirmed, and not even when the registrant is
+    /// that campus's own Staff Leader.
+    ///
+    /// <para>
+    /// It gates the DECISION, not the awareness. A Staff Leader still SEES a request of their own
+    /// campus while it sits here, in a read-only/pending shape, so they know a visit involving their
+    /// campus is waiting on its operational contacts. Visibility is earned by the ordinary campus
+    /// responsibility rules and is unaffected by this status; only approve/reject (and the things
+    /// that presuppose a decision, such as the host picker) wait for the gate to open.
+    /// </para>
     /// </summary>
     public const string PendingContactConfirmation = "PENDING_CONTACT_CONFIRMATION";
     public const string PendingApproval          = "PENDING_APPROVAL";
@@ -17,7 +25,11 @@ public static class VisitRequestStatuses
     public const string Rejected                 = "REJECTED";
     public const string Cancelled                = "CANCELLED";
 
-    /// <summary>True while the confirmation gate is shut for the whole request.</summary>
+    /// <summary>
+    /// True while the confirmation gate is shut for the whole request — i.e. no approval or
+    /// rejection may be taken on ANY of its campuses yet. Use it to gate an ACTION; never as a
+    /// blanket visibility exclusion, which is what it used to mean.
+    /// </summary>
     public static bool IsBehindContactGate(string? status)
         => status == PendingContactConfirmation;
 }

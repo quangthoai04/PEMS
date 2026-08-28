@@ -35,6 +35,14 @@ namespace PEMS.Application.Delegations.Queries.ViewGuestDelegationList;
 ///     filter may change, and changing it changes no rights at all.</item>
 /// </list>
 ///
+/// <para>
+/// The contact confirmation gate lives in the SECOND of those, never the first. A Staff Leader's own
+/// campus row is listed whatever the gate says — knowing a visit involving your campus is waiting on
+/// its operational contacts is the point — and <see cref="BuildAllowedActions"/> is what withholds
+/// APPROVE_AND_ASSIGN_HOST / CAMPUS_REJECT until it opens. The gate is enforced independently by the
+/// approve and reject handlers, so a row leaving here read-only is a UI courtesy, not the guarantee.
+/// </para>
+///
 /// Tabs (the populations):
 ///   • "responsible": Visitor = CONTACT-OWNER rows (one per request); HO = monitor (one per
 ///     request); campus actors (Staff Leader/Staff, Dept, Student) = one row per relevant
@@ -387,7 +395,13 @@ public sealed class ViewGuestDelegationListQueryHandler
         var requestActive = item.RequestStatus != VisitRequestStatuses.Cancelled;
         var ownCampus = ownCampusId.HasValue && item.CampusId == ownCampusId.Value;
 
+        // The contact gate is part of "is a review actually DUE", not part of "may this leader see
+        // the row". Behind it the campus can already read WAITING_REQUEST_APPROVAL — its own contact
+        // confirmed, a sibling's did not — and BuildAllowedActions withholds the decision, so
+        // ranking the row as review-required would promote a campus nobody can decide yet over a
+        // campus somebody genuinely must.
         if (isStaffLeader && ownCampus && requestActive
+            && !VisitRequestStatuses.IsBehindContactGate(item.RequestStatus)
             && item.CampusStatus == VisitInstanceStatus.WaitingRequestApproval)
             return VisitRelationPriority.CampusReviewRequired;
 
@@ -602,7 +616,15 @@ public sealed class ViewGuestDelegationListQueryHandler
 
             if (isStaffLeader && ownCampusId.HasValue && campus.CampusId == ownCampusId.Value)
             {
-                var reviewDue = requestActive && campus.Status == VisitInstanceStatus.WaitingRequestApproval;
+                // The relation is held regardless of the contact gate — that is the visibility half,
+                // and campus responsibility is its whole rule. What the gate decides is whether a
+                // review is DUE: it must agree with BuildAllowedActions, which withholds
+                // APPROVE_AND_ASSIGN_HOST behind the gate. Disagreeing would route the leader into
+                // CAMPUS_REVIEW and flag the row as needing action, with no decision to take when
+                // they arrive. Not due → the row opens read-only (RequestDetail) and ranks as
+                // tracking, which is exactly what a request still gathering its contacts is.
+                var reviewDue = requestActive && campus.Status == VisitInstanceStatus.WaitingRequestApproval
+                    && !VisitRequestStatuses.IsBehindContactGate(item.RequestStatus);
                 contexts.Add(At(VisitRowRelations.CampusReviewer,
                     reviewDue ? VisitEntryContexts.CampusReview
                         : live ? VisitEntryContexts.ProcessSummary
@@ -949,18 +971,24 @@ public sealed class ViewGuestDelegationListQueryHandler
                 var primaryCampusId = _currentUser.PrimaryCampusId
                     ?? throw new UnauthorizedAccessException("Staff Leader missing PrimaryCampusId");
 
-                // Campus-independent approval: the Staff Leader sees EVERY instance of their
-                // campus (single or multi) — no HO gate anymore — but only once the GLOBAL
-                // confirmation gate has opened. While ANY campus of the request is still missing
-                // its operational contact, the request is invisible to EVERY campus's Staff
-                // Leader, including one whose own campus already reached
-                // WAITING_REQUEST_APPROVAL. The gate belongs to the request, not the campus.
+                // Campus-independent approval: the Staff Leader sees EVERY instance of their campus
+                // (single or multi) — no HO gate anymore, and no contact gate either. Campus
+                // responsibility is the WHOLE of the visibility rule here.
                 //
-                // A Staff Leader who REGISTERED the request still sees it — through the
-                // "registered" tab (and its own source inside the merged "all" tab), which is the
-                // registrant relation and is unaffected by this reviewer-side filter.
-                q = q.Where(x => x.c.CampusId == primaryCampusId
-                    && x.vr.Status != VisitRequestStatuses.PendingContactConfirmation);
+                // The contact gate used to be ANDed onto this predicate, which made a request
+                // waiting on any campus's operational contact invisible to every campus's Staff
+                // Leader. That conflated two different questions: whether a leader may know a visit
+                // involving their campus exists, and whether they may decide it yet. Only the second
+                // belongs to the gate, and it is asked where the decision is offered
+                // (BuildAllowedActions) and where it is executed (CampusApprovalExecutor /
+                // RejectCampusInstanceCommandHandler) — so a behind-gate row arrives here read-only
+                // rather than not arriving at all.
+                //
+                // Unchanged: a leader of ANOTHER campus still gets nothing, and a Staff Leader who
+                // REGISTERED the request keeps seeing it through the "registered" tab (and its own
+                // source inside the merged "all" tab), which is the registrant relation and is
+                // unaffected by this reviewer-side filter.
+                q = q.Where(x => x.c.CampusId == primaryCampusId);
             }
             else if (roleCode == RoleCodes.Staff)
             {
@@ -1299,8 +1327,10 @@ public sealed class ViewGuestDelegationListQueryHandler
                 r.RegistrantUserId == userId
                 || isHoViewer
                 || contactHeldRequestIds.Contains(r.VisitRequestId)
-                || (leaderCampusIdForDetail is { } lcid && r.CampusId == lcid
-                    && !VisitRequestStatuses.IsBehindContactGate(r.RequestStatus))
+                // Campus responsibility alone, mirroring VisitFormReadService.ComputeScopeAsync: the
+                // contact gate withholds the DECISION, never the read, so a leader behind it opens
+                // the request in its read-only shape instead of walking into a 403.
+                || (leaderCampusIdForDetail is { } lcid && r.CampusId == lcid)
                 || r.CurrentHostUserId == userId
                 || participantGrantsDetail
                 || logisticsInstanceIds.Contains(r.VisitInstanceId);
@@ -2065,10 +2095,12 @@ public sealed class ViewGuestDelegationListQueryHandler
         bool isStaffLeader = roleCode == RoleCodes.Staff && string.Equals(subRole, UserSubRoles.Leader, StringComparison.OrdinalIgnoreCase);
         bool beforeStart = !item.PlannedStartAt.HasValue || item.PlannedStartAt.Value > now;
         bool requestActive = item.RequestStatus != VisitRequestStatuses.Cancelled;
-        // The global confirmation gate, re-asked on the row itself. The leader queue already
-        // filters behind-gate rows out, but a row can also arrive here through the merged "all"
-        // tab (registrant source), and offering a decision button there would contradict
-        // CampusApprovalExecutor, which refuses the call outright.
+        // The global confirmation gate, asked on the row itself — and now the ONLY place the list
+        // asks it. The reviewer-side query no longer filters behind-gate rows out (a leader is meant
+        // to SEE a request of their campus while it waits on its operational contacts), so every
+        // such row reaches this method and must leave it read-only. Offering a decision button here
+        // would contradict CampusApprovalExecutor / RejectCampusInstanceCommandHandler, which refuse
+        // the call outright.
         bool contactGateOpen = !VisitRequestStatuses.IsBehindContactGate(item.RequestStatus);
 
         // Relations of THIS row's own campus instance. An action is instance-scoped, so holding the

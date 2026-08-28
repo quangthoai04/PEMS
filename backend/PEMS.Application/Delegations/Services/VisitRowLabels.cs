@@ -58,7 +58,8 @@ public static class VisitRowLabels
         VisitInstanceStatus.Cancelled => new Resolution(VisitInstanceStatus.Cancelled, "Đã hủy"),
         VisitInstanceStatus.Rejected => new Resolution(VisitInstanceStatus.Rejected, RejectedLabel(roleCode)),
         // Behind the confirmation gate: the campus is waiting for its operational contact to answer,
-        // and until every campus has, no Staff Leader sees the request at all.
+        // and until every campus has, no Staff Leader may decide any of them. This label is what a
+        // leader now reads on such a row — it has to say "waiting", not "waiting for you".
         VisitInstanceStatus.WaitingContactConfirmation => new Resolution(VisitInstanceStatus.WaitingContactConfirmation, "Chờ xác nhận"),
         VisitInstanceStatus.WaitingRequestApproval => new Resolution(VisitInstanceStatus.WaitingRequestApproval, "Chờ duyệt"),
         // Approved with a person named, and that person has not started preparing yet. "Host" is the

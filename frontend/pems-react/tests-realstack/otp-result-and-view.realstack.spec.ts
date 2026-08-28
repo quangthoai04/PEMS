@@ -156,7 +156,7 @@ test.describe('Real-stack: the result of pressing Confirm', () => {
     // identifier the confirmation email carries), so "the receipt names a request that really
     // exists" is proven from the verify response the receipt was built from, not from its DOM.
     await expect(page.getByTestId('v2-success-title')).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByTestId('v2-success-status')).toBeVisible();
+    await expect(page.getByTestId('v2-success-note')).toBeVisible();
     const body = await verified.json();
     expect(body.requestCode).toMatch(/^VR/);
 

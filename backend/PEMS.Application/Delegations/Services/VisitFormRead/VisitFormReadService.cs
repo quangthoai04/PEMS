@@ -1060,17 +1060,21 @@ public sealed class VisitFormReadService : IVisitFormReadService
         foreach (var id in operated) authorized.Add(id);
         if (operated.Count > 0) relation = VisitInstanceAccess.OperationalContact;
 
-        // Staff Leader → only their own-campus instance(s), and ONLY once the GLOBAL confirmation
-        // gate is open. The gate is a property of the REQUEST, not of a campus: this leader's own
-        // campus can already have its contact confirmed (WAITING_REQUEST_APPROVAL) while a sibling
-        // still has nobody, and until every campus has confirmed, no Staff Leader of any campus may
-        // read the request through their leader relation. The review queue filters those rows out,
-        // but a queue is not authorization — a guessed URL has to be refused here too.
+        // Staff Leader → only their own-campus instance(s). Campus responsibility is the whole rule:
+        // a leader of another campus is still a stranger to this request and gets nothing here.
         //
-        // The registrant branch returned above, so a Staff Leader who submitted this request keeps
-        // full access to it through REGISTRANT: the gate only ever withholds the reviewer relation.
-        if (isStaffLeader && primaryCampusId.HasValue
-            && !VisitRequestStatuses.IsBehindContactGate(request.Status))
+        // The GLOBAL confirmation gate is deliberately NOT asked. It used to be ANDed on, which made
+        // the detail 403 for a leader whose own campus had already confirmed just because a sibling
+        // had not — so a leader could neither see nor decide. The gate withholds the DECISION only:
+        // it is asked where approve/reject are OFFERED (the instanceActions block further up, on the
+        // same four conditions as the list) and where they are EXECUTED (CampusApprovalExecutor,
+        // RejectCampusInstanceCommandHandler). Reading a request that is still collecting its
+        // operational contacts changes nothing and is exactly what a leader needs in order to know
+        // one is coming.
+        //
+        // The registrant branch returned above, so a Staff Leader who submitted this request still
+        // gets the whole request through REGISTRANT rather than this one-campus reviewer scope.
+        if (isStaffLeader && primaryCampusId.HasValue)
         {
             foreach (var c in instances.Where(c => c.CampusId == primaryCampusId.Value))
                 authorized.Add(c.VisitInstanceId);

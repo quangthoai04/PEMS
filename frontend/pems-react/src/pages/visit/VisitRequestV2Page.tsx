@@ -88,8 +88,9 @@ export default function VisitRequestV2Page({ mode }: Props) {
           setResult({ response, values });
           // A companion to the receipt, never a replacement: an id keeps a second create from
           // stacking a duplicate notification.
+          // The request code is not shown anywhere in this flow — not on the receipt, not here.
           showSuccessToast(
-            t('visitRequestV2:success.toast', { code: response.requestCode }),
+            t('visitRequestV2:success.toast'),
             `v2-created-${response.visitRequestId}`,
           );
           window.scrollTo({ top: 0, behavior: 'smooth' });

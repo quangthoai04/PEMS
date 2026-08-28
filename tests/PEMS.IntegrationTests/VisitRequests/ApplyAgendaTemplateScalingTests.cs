@@ -44,7 +44,21 @@ public sealed class ApplyAgendaTemplateScalingTests
     private const ulong CampusHn = 1;
 
     private static bool? _dbUp;
-    private static readonly DateTime Now = DateTime.Now;
+
+    /// <summary>
+    /// Truncated to the second, because every column this fixture's clock reaches — planned_start_at,
+    /// planned_end_at, visit_agendas.start_time/end_time — is a MySQL DATETIME(0), and MySQL ROUNDS a
+    /// sub-second value to the nearest second on write while .NET's "HH:mm:ss" formatting TRUNCATES it.
+    /// A plain DateTime.Now therefore made the suite pass or fail on its own millisecond component: with
+    /// a fraction below .500 the two agreed, and at or above it the stored value was one second ahead of
+    /// the in-memory one the assertions compare against — a fixture artefact that says nothing about the
+    /// scaling under test. Feeding whole seconds in is what the production path always sees anyway, since
+    /// the scaler reads plannedStart back out of that same column before computing anything.
+    /// </summary>
+    private static readonly DateTime Now = TruncateToSecond(DateTime.Now);
+
+    private static DateTime TruncateToSecond(DateTime dt)
+        => new(dt.Year, dt.Month, dt.Day, dt.Hour, dt.Minute, dt.Second, dt.Kind);
 
     private static ApplicationDbContext NewContext()
         => new(new DbContextOptionsBuilder<ApplicationDbContext>()

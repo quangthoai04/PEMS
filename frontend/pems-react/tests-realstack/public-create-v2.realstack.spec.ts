@@ -128,7 +128,7 @@ test.describe('Real-stack: public per-campus v2 create', () => {
     // receipt screen itself deliberately never surfaces it (VisitRequestV2SuccessPanel: it stays a
     // server-side identifier the confirmation email carries, not something the receipt repeats).
     await expect(page.getByText('Đã gửi yêu cầu tham quan')).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByTestId('v2-success-status')).toBeVisible();
+    await expect(page.getByTestId('v2-success-note')).toBeVisible();
     expect((await verified.json()).requestCode).toMatch(/^VR/);
   });
 });

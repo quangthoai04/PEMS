@@ -53,16 +53,23 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+/**
+ * Schedule availability of ONE candidate in the invite dropdown — plain italic text rather than a
+ * chip: it is a note about the person the row already names, not a status the row is "in". Colour
+ * alone carries the distinction (emerald = free, amber = clashes), the same way "Chưa có email"
+ * beside it is bare text. The chip form is kept for `StatusBadge`, where the invitation status
+ * really is a state of the record.
+ */
 function ConflictBadge({ count, allPrivate }: { count: number; allPrivate: boolean }) {
   if (count <= 0) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+      <span className="inline-flex items-center gap-1 text-[11px] font-normal italic text-emerald-700">
         Không trùng lịch
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-700">
+    <span className="inline-flex items-center gap-1 text-[11px] font-normal italic text-amber-700">
       <AlertCircle className="w-3 h-3" />
       {allPrivate ? 'Có lịch cá nhân trùng' : `Có ${count} lịch trùng`}
     </span>
@@ -690,7 +697,9 @@ function CandidateRow({
           {candidate.departmentName && <span>{candidate.departmentName}</span>}
           {subtitle && <span>{subtitle}</span>}
         </div>
-        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+        {/* Tighter than the chip version was: without a box around it the note reads as part of the
+            same meta block, not as a separate row of controls. */}
+        <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
           <ConflictBadge
             count={candidate.conflictCount}
             allPrivate={candidate.hasPrivateConflict && candidate.conflictCount > 0}

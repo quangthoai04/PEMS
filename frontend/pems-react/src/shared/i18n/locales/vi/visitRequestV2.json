@@ -282,7 +282,6 @@
     "trackStatusAlso": "Bạn có thể theo dõi trạng thái và tiến độ xử lý đơn trực tiếp trên hệ thống bằng cách đăng nhập qua tài khoản Google ({{email}}).",
     "trackStatus": "Bạn có thể theo dõi trạng thái và tiến độ xử lý đơn trực tiếp trên hệ thống bằng cách đăng nhập qua tài khoản Google ({{email}}).",
     "backHome": "Về trang chủ",
-    "statusLabel": "Trạng thái:",
     "viewRequest": "Xem đơn vừa tạo",
     "goToList": "Về danh sách đơn",
     "createAnother": "Tạo đơn mới",

@@ -39,9 +39,10 @@ public sealed class GetHostCandidatesQueryHandler
         if (_currentUser.PrimaryCampusId != instance.CampusId)
             throw new ForbiddenException("Cơ sở này không thuộc phạm vi phụ trách của bạn.");
 
-        // The global confirmation gate (spec §6.1). Picking a host is the first half of approving, and
-        // this list is a genuine disclosure — it names the campus's own staff and their schedules — so
-        // it must not answer for a request no Staff Leader is supposed to be able to see yet.
+        // The global confirmation gate (spec §6.1). Picking a host is the first half of approving, so
+        // it waits with the approval — the leader may READ a request that is still gathering its
+        // operational contacts, but nothing that presupposes a decision is due opens for it. This list
+        // is also a genuine disclosure of its own: it names the campus's own staff and their schedules.
         var requestStatus = await _db.VisitRequests
             .Where(v => v.VisitRequestId == instance.VisitRequestId)
             .Select(v => v.Status)

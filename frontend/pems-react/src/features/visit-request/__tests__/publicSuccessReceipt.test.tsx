@@ -38,6 +38,12 @@ vi.mock('../api/visitRequestV2Api', () => ({
   getVisitSubmissionResult: vi.fn(),
 }));
 
+vi.mock('../../../shared/utils/toast', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../shared/utils/toast')>()),
+  showSuccessToast: vi.fn(),
+}));
+import { showSuccessToast } from '../../../shared/utils/toast';
+
 import { getVisitRequestFormV2, getVisitRequestHistory } from '../api/visitRequestV2Api';
 import { VisitRequestV2SuccessPanel } from '../components/v2/VisitRequestV2SuccessPanel';
 import { VisitEntrySurfaces } from '../../../shared/features/VisitEntrySurfaces';
@@ -118,22 +124,64 @@ describe('the public CTA keeps the receipt on screen (plan §3, §9)', () => {
     succeed();
     expect(onV2Success).toHaveBeenCalledTimes(1);
   });
+
+  /**
+   * The companion toast never names the request code either. Signing in does not turn a visitor
+   * into staff — the same CTA opens the same modal for both, and it reported "Đã tạo đơn VR… thành
+   * công" to a signed-in visitor whose receipt deliberately showed no code at all.
+   */
+  it.each(['public', 'authenticated'] as const)('raises a code-free success toast (%s)', (v2Mode) => {
+    render(<VisitEntrySurfaces cta={{ ...publicCta(vi.fn()), v2Mode }} />);
+    succeed();
+
+    expect(showSuccessToast).toHaveBeenCalledTimes(1);
+    const [message] = vi.mocked(showSuccessToast).mock.calls[0];
+    expect(message).toBe('Your visit request was submitted.');
+    expect(message).not.toContain('VR2026072629B9DFF');
+  });
 });
 
 describe('the receipt itself (plan §4, §5, §7)', () => {
   beforeEach(async () => { vi.clearAllMocks(); await i18n.changeLanguage('en'); });
 
-  it('titles the receipt with the campus and submit time, states the status, and never shows the request code', () => {
+  it('titles the receipt with the campus and submit time, and never shows the request code or a status line', () => {
     render(<VisitRequestV2SuccessPanel response={response()} values={values()} />);
 
     const title = screen.getByTestId('v2-success-title');
     expect(title).toHaveTextContent('FPT Hà Nội');
     // Wall-clock, never shifted through the viewer's own timezone.
     expect(title).toHaveTextContent('26/07/2026 14:30');
-    expect(screen.getByTestId('v2-success-status')).toHaveTextContent(/Waiting for the Staff Leader/i);
+    expect(screen.queryByTestId('v2-success-status')).toBeNull();
     expect(screen.queryByText('VR2026072629B9DFF')).toBeNull();
     // Names the registrant's own email — not a generic "check your inbox".
     expect(screen.getByText(/sign in with Google/i)).toHaveTextContent('reg@example.com');
+  });
+
+  it('reads the guidance as italic prose under the title, not as a boxed callout', () => {
+    render(<VisitRequestV2SuccessPanel response={response()} values={values()} />);
+
+    const note = screen.getByTestId('v2-success-note');
+    expect(note).toHaveTextContent('reg@example.com');
+    // Italic, normal weight — a subtitle, not a warning.
+    expect(note.parentElement?.className).toMatch(/italic/);
+    expect(note.parentElement?.className).toMatch(/font-normal/);
+    // Nothing amber, and no bullet list: the callout box is gone.
+    expect(note.closest('ul')).toBeNull();
+    expect(document.querySelector('[class*="amber"]')).toBeNull();
+  });
+
+  it('puts the pending-contact line above the tracking line, both italic, when a contact still owes a confirmation', () => {
+    render(
+      <VisitRequestV2SuccessPanel
+        response={response({ pendingContactConfirmations: 1 })}
+        values={values()}
+      />,
+    );
+
+    const pending = screen.getByTestId('v2-success-claim-pending');
+    expect(pending).toHaveTextContent('op@example.com');
+    expect(pending.compareDocumentPosition(screen.getByTestId('v2-success-note')))
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it('offers "review what you submitted" on the public surface too', () => {

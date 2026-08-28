@@ -304,9 +304,12 @@ test.describe('UC17 public visit request (per-campus v2 form)', () => {
     // TC-07: correct OTP → success summary in the same modal.
     await enterOtp(page, '135790');
     await expect(page.getByRole('heading', { name: 'Đã gửi yêu cầu tham quan' })).toBeVisible();
-    await expect(page.getByText('Đầu mối đã xác nhận — chờ Staff Leader duyệt và chọn người phụ trách')).toBeVisible();
-    // Exact-element match: a success toast also contains the request code as a substring.
-    await expect(page.getByTestId('v2-success-code')).toContainText('VR-2026-000123');
+    // The receipt names the campus and the submit time, then says how to follow the request. It
+    // states no queue status and no request code: neither is something the visitor can act on.
+    await expect(page.getByTestId('v2-success-title')).toContainText('Hà Nội');
+    await expect(page.getByTestId('v2-success-note')).toContainText('registrant@example.com');
+    await expect(page.getByTestId('v2-success-status')).toHaveCount(0);
+    await expect(page.getByText('VR-2026-000123')).toHaveCount(0);
 
     // …but never the OTP code (exact match: the code must not appear as any element's text).
     await expect(page.getByText('135790', { exact: true })).toHaveCount(0);
@@ -323,7 +326,7 @@ test.describe('UC17 public visit request (per-campus v2 form)', () => {
     await openVisitForm(page);
     await expect(page.getByText('Khôi phục thông tin đã nhập?')).toHaveCount(0);
     await expect(page.locator('[data-testid="v2-registrant-fullName"]')).toHaveValue('');
-    await expect(page.getByTestId('v2-success-code')).toHaveCount(0);
+    await expect(page.getByTestId('v2-success-title')).toHaveCount(0);
   });
 
   /**
@@ -603,7 +606,7 @@ test.describe('UC17 OTP V2 + idempotent replay', () => {
     await enterOtp(page, '135790');
 
     await expect(page.getByRole('heading', { name: 'Đã gửi yêu cầu tham quan' })).toBeVisible();
-    await expect(page.getByTestId('v2-success-code')).toContainText('VR-2026-000123');
+    await expect(page.getByTestId('v2-success-title')).toContainText('Hà Nội');
     // No idempotent-replay notice on a first-time, non-replayed create.
     await expect(page.getByText('Yêu cầu này đã được ghi nhận trước đó')).toHaveCount(0);
 

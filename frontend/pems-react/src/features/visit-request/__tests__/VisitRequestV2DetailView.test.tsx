@@ -122,21 +122,25 @@ describe('VisitRequestV2DetailView', () => {
 
     expect(await screen.findByText('Varies by campus')).toBeInTheDocument();
     expect(screen.getAllByLabelText(/Campus detail/)).toHaveLength(2);
-    // Two campuses → accordion: the first is open, the second closed. What a closed campus still
-    // shows is the point of the design — name, status, amendment badge and planned time stay on the
-    // header, so the reader can pick the right campus without opening all of them.
-    expect(screen.getByText('Đoàn ĐH ABC')).toBeInTheDocument();
+    // Two campuses → accordion, and it opens CLOSED: the reader picks the campus they came for
+    // instead of being handed whichever one happens to be first. What a closed campus still shows is
+    // the point of the design — name, status, amendment badge and planned time stay on the header,
+    // so the choice can be made without opening anything.
+    expect(screen.queryByText('Đoàn ĐH ABC')).not.toBeInTheDocument();
     expect(screen.queryByText('Đoàn HCM khác hẳn')).not.toBeInTheDocument();
     expect(screen.getByText('FPTU Hồ Chí Minh')).toBeInTheDocument();
     expect(screen.getByTestId('campus-status-11')).toBeInTheDocument();
 
-    // Opening HCM shows ITS content — it never inherits HN's delegation name — and LEAVES HN OPEN.
-    // Each campus is independent: comparing two campuses of one request side by side is the ordinary
-    // thing to do here, and it used to be impossible because opening one shut the other.
+    // Opening HCM shows ITS content — it never inherits HN's delegation name — and opening HN beside
+    // it LEAVES HCM OPEN. Each campus is independent: comparing two campuses of one request side by
+    // side is the ordinary thing to do here, and it used to be impossible because opening one shut
+    // the other.
     fireEvent.click(screen.getByTestId('campus-detail-toggle-11'));
     expect(await screen.findByText('Đoàn HCM khác hẳn')).toBeInTheDocument();
     expect(screen.getByText('Host HCM')).toBeInTheDocument();
-    expect(screen.getByText('Đoàn ĐH ABC')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('campus-detail-toggle-10'));
+    expect(await screen.findByText('Đoàn ĐH ABC')).toBeInTheDocument();
+    expect(screen.getByText('Đoàn HCM khác hẳn')).toBeInTheDocument();
 
     // Closing HN touches HN alone.
     fireEvent.click(screen.getByTestId('campus-detail-toggle-10'));
@@ -162,6 +166,61 @@ describe('VisitRequestV2DetailView', () => {
     expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
     expect(screen.getByText('Đoàn ĐH ABC')).toBeInTheDocument();
     expect(screen.queryByTestId('campus-detail-toggle-10')).toBeNull();
+  });
+
+  /**
+   * Reading ONE campus of a multi-campus request (`?campus=` → `focusInstanceId`). The reader came
+   * from that campus's row in the list, so section ② answers about that campus — it used to hand
+   * them the whole request, TP.HCM's row opening onto Hà Nội's content.
+   */
+  describe('one campus at a time', () => {
+    const twoCampuses = () => formFixture({
+      hasMixedCampusDetails: true,
+      visitScope: 'MULTI_CAMPUS',
+      campusVisits: [
+        campusFixture(),
+        campusFixture({
+          visitInstanceId: 11, campusId: 2, campusCode: 'HCM', campusName: 'FPTU Hồ Chí Minh',
+          delegationName: 'Đoàn HCM khác hẳn', instanceStatus: 'PENDING',
+        }),
+      ],
+    });
+
+    it('shows only the focused campus, already open and with no chevron to collapse it', async () => {
+      vi.mocked(getVisitRequestFormV2).mockResolvedValue(twoCampuses());
+      render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} focusInstanceId={11} /></MemoryRouter>);
+
+      expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
+      expect(screen.getAllByLabelText(/Campus detail/)).toHaveLength(1);
+      // TP.HCM's own content, open on arrival — one campus is never collapsible.
+      expect(screen.getByText('Đoàn HCM khác hẳn')).toBeInTheDocument();
+      expect(screen.queryByTestId('campus-detail-toggle-11')).toBeNull();
+      // Hà Nội is not part of the answer — not its card, not its header, not its content.
+      expect(screen.queryByText('Đoàn ĐH ABC')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('campus-status-10')).toBeNull();
+    });
+
+    it('ignores a campus id the payload does not contain, rather than emptying the section', async () => {
+      vi.mocked(getVisitRequestFormV2).mockResolvedValue(twoCampuses());
+      // 99 is not in scope for this caller (revoked access, or a stale link).
+      render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} focusInstanceId={99} /></MemoryRouter>);
+
+      expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
+      expect(screen.getAllByLabelText(/Campus detail/)).toHaveLength(2);
+      expect(screen.queryByText(/Không có cơ sở|No campus/i)).toBeNull();
+    });
+
+    it('leaves the request-level facts alone — the overview still counts every campus', async () => {
+      vi.mocked(getVisitRequestFormV2).mockResolvedValue(twoCampuses());
+      render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} focusInstanceId={11} /></MemoryRouter>);
+
+      expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
+      // The overview badge describes the REQUEST (2 campuses); section ②'s own badge describes what
+      // that section shows (1). Both are true at once, which is why they are counted separately.
+      const counts = screen.getAllByText(/campus(es)?$/i).map(el => el.textContent);
+      expect(counts.some(text => text?.includes('2'))).toBe(true);
+      expect(counts.some(text => text?.includes('1'))).toBe(true);
+    });
   });
 
   it('scoped payload is rendered verbatim: a single-campus response for an instance-scoped viewer shows ONE card and no sibling hints', async () => {
