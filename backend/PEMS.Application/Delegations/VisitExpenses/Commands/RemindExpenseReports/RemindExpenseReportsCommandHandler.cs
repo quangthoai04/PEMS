@@ -95,26 +95,47 @@ public class RemindExpenseReportsCommandHandler : IRequestHandler<RemindExpenseR
         // template, and nobody is added as a silent copy.
         var prepared = new List<PreparedSystemEmail>();
 
+        // Batch: assignee + department-leader candidates for the WHOLE pendingItems batch, instead of
+        // up to 2 queries per item. Same predicates as the per-item queries they replace.
+        var assigneeIds = pendingItems.Where(i => i.AssignedToUserId.HasValue)
+            .Select(i => i.AssignedToUserId!.Value).Distinct().ToList();
+        var assigneesById = await _context.Users
+            .Where(u => assigneeIds.Contains(u.UserId) && u.Status == "ACTIVE")
+            .ToDictionaryAsync(u => u.UserId, cancellationToken);
+
+        var deptIds = pendingItems.Where(i => i.RequestedToDepartmentId.HasValue)
+            .Select(i => i.RequestedToDepartmentId!.Value).Distinct().ToList();
+        var leadersByDept = (await _context.Users
+                .Where(u => u.DepartmentId.HasValue && deptIds.Contains(u.DepartmentId.Value)
+                            && u.Role.RoleCode == RoleCodes.Department
+                            && u.SubRole == UserSubRoles.Leader
+                            && u.Status == "ACTIVE")
+                .ToListAsync(cancellationToken))
+            .ToLookup(u => u.DepartmentId!.Value);
+
+        // Collected across all items and sent as one CreateManyAsync call after the loop (still inside
+        // this transaction, before commit) instead of one CreateAsync per recipient. Safe: within one
+        // call to this handler, a (RecipientUserId, LogisticsItem RelatedId) pair never repeats — each
+        // item contributes either its one assignee OR its department's leaders, never both, and every
+        // item has a distinct LogisticsItemId — so CreateManyAsync's in-batch DistinctBy dedupe (keyed on
+        // RecipientUserId+NotificationType+RelatedType+RelatedId+DedupeKey, and DedupeKey is not set
+        // here) can never collapse two of these requests into one.
+        var notificationRequests = new List<PEMS.Application.Notifications.Common.CreateNotificationRequest>();
+
         await using (var transaction = await _context.BeginTransactionAsync(cancellationToken))
         {
             foreach (var item in pendingItems)
             {
                 // Người phụ trách đơn; chưa gán thì nhắc trưởng phòng của phòng ban được yêu cầu.
                 var recipients = new List<Domain.Entities.Users.User>();
-                if (item.AssignedToUserId.HasValue)
+                if (item.AssignedToUserId.HasValue
+                    && assigneesById.TryGetValue(item.AssignedToUserId.Value, out var assignee))
                 {
-                    var assignee = await _context.Users
-                        .FirstOrDefaultAsync(u => u.UserId == item.AssignedToUserId.Value && u.Status == "ACTIVE", cancellationToken);
-                    if (assignee != null) recipients.Add(assignee);
+                    recipients.Add(assignee);
                 }
                 if (recipients.Count == 0 && item.RequestedToDepartmentId.HasValue)
                 {
-                    recipients = await _context.Users
-                        .Where(u => u.DepartmentId == item.RequestedToDepartmentId.Value
-                                    && u.Role.RoleCode == RoleCodes.Department
-                                    && u.SubRole == UserSubRoles.Leader
-                                    && u.Status == "ACTIVE")
-                        .ToListAsync(cancellationToken);
+                    recipients = leadersByDept[item.RequestedToDepartmentId.Value].ToList();
                 }
                 if (recipients.Count == 0) continue;
 
@@ -129,7 +150,7 @@ public class RemindExpenseReportsCommandHandler : IRequestHandler<RemindExpenseR
 
                 foreach (var recipient in recipients)
                 {
-                    await _notificationService.CreateAsync(
+                    notificationRequests.Add(
                         new PEMS.Application.Notifications.Common.CreateNotificationRequest(
                             RecipientUserId: recipient.UserId,
                             Title: "Nhắc nhở kê khai chi phí",
@@ -145,8 +166,7 @@ public class RemindExpenseReportsCommandHandler : IRequestHandler<RemindExpenseR
                             ActionUrl: actionUrl,
                             MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
                                 PEMS.Application.Notifications.Common.NotificationEventKeys.LogisticsExpenseReminder,
-                                new { delegationName })),
-                        cancellationToken);
+                                new { delegationName })));
 
                     prepared.Add(await _dispatcher.PrepareAsync(
                         new SystemEmailRequest(
@@ -180,6 +200,9 @@ public class RemindExpenseReportsCommandHandler : IRequestHandler<RemindExpenseR
 
                 result.RemindedCount++;
             }
+
+            if (notificationRequests.Count > 0)
+                await _notificationService.CreateManyAsync(notificationRequests, cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
         }

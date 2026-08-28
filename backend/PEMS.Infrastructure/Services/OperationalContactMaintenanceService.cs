@@ -137,6 +137,15 @@ public sealed class OperationalContactMaintenanceService : IOperationalContactMa
             return 0;
         }
 
+        // Batch: every token for the whole claimed row set, in one query instead of one per claim.
+        // Row lock is unaffected — this SELECT has no FOR UPDATE, same as the per-claim query it replaces.
+        var identityChangeIds = due.Select(c => c.IdentityChangeId).ToList();
+        var tokensByIdentityChangeId = (await _db.EmailActionTokens
+                .Where(t => t.TargetType == EmailActionTargetTypes.VisitRequestIdentityChange
+                            && identityChangeIds.Contains(t.TargetId))
+                .ToListAsync(ct))
+            .ToLookup(t => t.TargetId);
+
         foreach (var claim in due)
         {
             // Redact PII: full email + pending snapshot + free-text reason + the tokens' recipient
@@ -147,13 +156,11 @@ public sealed class OperationalContactMaintenanceService : IOperationalContactMa
             claim.RedactedAt = now;
             claim.UpdatedAt = now;
 
-            var tokens = await _db.EmailActionTokens
-                .Where(t => t.TargetType == EmailActionTargetTypes.VisitRequestIdentityChange
-                            && t.TargetId == claim.IdentityChangeId
-                            && t.RecipientEmail != claim.NewEmailMasked)
-                .ToListAsync(ct);
-            foreach (var token in tokens)
-                token.RecipientEmail = claim.NewEmailMasked;
+            // Scope PRESERVED: only tokens not already carrying the masked email are touched, matching
+            // the original SQL-side `t.RecipientEmail != claim.NewEmailMasked` filter.
+            foreach (var token in tokensByIdentityChangeId[claim.IdentityChangeId])
+                if (token.RecipientEmail != claim.NewEmailMasked)
+                    token.RecipientEmail = claim.NewEmailMasked;
 
             _db.VisitRequestIdentityChangeEvents.Add(new VisitRequestIdentityChangeEvent
             {

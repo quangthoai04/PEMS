@@ -4,6 +4,7 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Utils;
 using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Entities.Users;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -137,40 +138,49 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
 
             if (l == null) return null;
 
-            string senderName = "Hệ thống";
-            if (l.RequestedBy.HasValue)
-            {
-                var sender = await _context.Users.FirstOrDefaultAsync(u => u.UserId == l.RequestedBy.Value, cancellationToken);
-                if (sender != null) senderName = sender.FullName;
-            }
-
-            string assigneeName = "Chưa gán";
-            if (l.AssignedToUserId.HasValue)
-            {
-                var assignee = await _context.Users.FirstOrDefaultAsync(u => u.UserId == l.AssignedToUserId.Value, cancellationToken);
-                if (assignee != null) assigneeName = assignee.FullName;
-            }
-
-            string responderName = "Hệ thống";
-            ulong? responderId = l.ReceivedBy ?? l.UpdatedBy;
-            if (responderId.HasValue)
-            {
-                var responder = await _context.Users.FirstOrDefaultAsync(u => u.UserId == responderId.Value, cancellationToken);
-                if (responder != null) responderName = $"{responder.FullName} - {responder.SubRole ?? "Nhân viên"}";
-            }
-
-            // Assignment history
+            // Assignment history (fetched first: attempt assignee IDs feed the batched user lookup below)
             var attempts = await _context.VisitLogisticsAssignmentAttempts
                 .Where(a => a.LogisticsItemId == request.LogisticsItemId)
                 .OrderBy(a => a.AssignedAt)
                 .ToListAsync(cancellationToken);
 
+            ulong? responderId = l.ReceivedBy ?? l.UpdatedBy;
+
+            // Batch: every user referenced anywhere on this detail screen (sender, assignee, responder,
+            // attempt assignees, proposer, proposal-responder) fetched in one query instead of one per name.
+            var candidateUserIds = new HashSet<ulong>();
+            if (l.RequestedBy.HasValue) candidateUserIds.Add(l.RequestedBy.Value);
+            if (l.AssignedToUserId.HasValue) candidateUserIds.Add(l.AssignedToUserId.Value);
+            if (responderId.HasValue) candidateUserIds.Add(responderId.Value);
+            if (l.ProposedBy.HasValue) candidateUserIds.Add(l.ProposedBy.Value);
+            if (l.ProposalRespondedBy.HasValue) candidateUserIds.Add(l.ProposalRespondedBy.Value);
+            foreach (var att in attempts) candidateUserIds.Add(att.AssigneeUserId);
+
+            var usersById = candidateUserIds.Count == 0
+                ? new Dictionary<ulong, User>()
+                : await _context.Users
+                    .Include(u => u.Role)
+                    .Where(u => candidateUserIds.Contains(u.UserId))
+                    .ToDictionaryAsync(u => u.UserId, cancellationToken);
+
+            string senderName = "Hệ thống";
+            if (l.RequestedBy.HasValue && usersById.TryGetValue(l.RequestedBy.Value, out var sender))
+                senderName = sender.FullName;
+
+            string assigneeName = "Chưa gán";
+            if (l.AssignedToUserId.HasValue && usersById.TryGetValue(l.AssignedToUserId.Value, out var assignee))
+                assigneeName = assignee.FullName;
+
+            string responderName = "Hệ thống";
+            if (responderId.HasValue && usersById.TryGetValue(responderId.Value, out var responder))
+                responderName = $"{responder.FullName} - {responder.SubRole ?? "Nhân viên"}";
+
             var historyDtos = new List<AssignmentAttemptDto>();
             foreach (var att in attempts)
             {
                 string attAssigneeName = att.AssigneeUserId.ToString();
-                var attUser = await _context.Users.FirstOrDefaultAsync(u => u.UserId == att.AssigneeUserId, cancellationToken);
-                if (attUser != null) attAssigneeName = attUser.FullName;
+                if (usersById.TryGetValue(att.AssigneeUserId, out var attUser))
+                    attAssigneeName = attUser.FullName;
 
                 historyDtos.Add(new AssignmentAttemptDto
                 {
@@ -189,24 +199,18 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
             var camp = l.VisitInstance;
             string? proposedByName = null;
             string? proposedByRole = null;
-            if (l.ProposedBy.HasValue)
+            if (l.ProposedBy.HasValue && usersById.TryGetValue(l.ProposedBy.Value, out var proposedBy))
             {
-                var proposedBy = await _context.Users
-                    .Include(u => u.Role)
-                    .FirstOrDefaultAsync(u => u.UserId == l.ProposedBy.Value, cancellationToken);
-                proposedByName = proposedBy?.FullName;
-                proposedByRole = proposedBy == null ? null : $"{proposedBy.Role?.RoleCode ?? ""}{(string.IsNullOrWhiteSpace(proposedBy.SubRole) ? "" : $" - {proposedBy.SubRole}")}";
+                proposedByName = proposedBy.FullName;
+                proposedByRole = $"{proposedBy.Role?.RoleCode ?? ""}{(string.IsNullOrWhiteSpace(proposedBy.SubRole) ? "" : $" - {proposedBy.SubRole}")}";
             }
 
             string? responseByName = null;
             string? responseByRole = null;
-            if (l.ProposalRespondedBy.HasValue)
+            if (l.ProposalRespondedBy.HasValue && usersById.TryGetValue(l.ProposalRespondedBy.Value, out var responseBy))
             {
-                var responseBy = await _context.Users
-                    .Include(u => u.Role)
-                    .FirstOrDefaultAsync(u => u.UserId == l.ProposalRespondedBy.Value, cancellationToken);
-                responseByName = responseBy?.FullName;
-                responseByRole = responseBy == null ? null : $"{responseBy.Role?.RoleCode ?? ""}{(string.IsNullOrWhiteSpace(responseBy.SubRole) ? "" : $" - {responseBy.SubRole}")}";
+                responseByName = responseBy.FullName;
+                responseByRole = $"{responseBy.Role?.RoleCode ?? ""}{(string.IsNullOrWhiteSpace(responseBy.SubRole) ? "" : $" - {responseBy.SubRole}")}";
             }
 
             var borrowSigned = await _context.VisitLogisticsItemHandovers.AnyAsync(h =>

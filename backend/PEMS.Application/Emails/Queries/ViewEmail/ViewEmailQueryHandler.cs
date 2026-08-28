@@ -52,6 +52,7 @@ public class ViewEmailQueryHandler : IRequestHandler<ViewEmailQuery, ViewEmailDt
             .Include(e => e.EmailTemplate)
             .Include(e => e.Recipients)
             .Include(e => e.Attachments).ThenInclude(a => a.File)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(e => e.SentEmailId == request.Id, cancellationToken)
             ?? throw new NotFoundException("SentEmail", request.Id);
 

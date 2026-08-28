@@ -423,25 +423,25 @@ public sealed class CreateNewsCommandHandler
                 CreatedAt         = now,
                 UpdatedAt         = null
             };
-            _dbContext.NewsContentSections.Add(section);
-            await _dbContext.SaveChangesAsync(cancellationToken); // get SectionId
-
+            // Added via the navigation, not Add()+flush — EF inserts the parent then the children in
+            // the SAME SaveChangesAsync, in dependency order, and backfills SectionId on each child
+            // itself. No code in this method reads section.SectionId before that SaveChanges runs.
             if (sectionDto.SectionFiles is { Count: > 0 })
             {
                 foreach (var fileDto in sectionDto.SectionFiles)
                 {
-                    var sectionFile = new NewsSectionFile
+                    section.SectionFiles.Add(new NewsSectionFile
                     {
-                        SectionId    = section.SectionId,
                         FileId       = fileDto.FileId,
                         UsageType    = fileDto.UsageType.ToUpperInvariant(),
                         DisplayOrder = fileDto.DisplayOrder
-                    };
-                    _dbContext.NewsSectionFiles.Add(sectionFile);
+                    });
                 }
-                await _dbContext.SaveChangesAsync(cancellationToken);
             }
+            _dbContext.NewsContentSections.Add(section);
         }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private static string ToSlug(string input)

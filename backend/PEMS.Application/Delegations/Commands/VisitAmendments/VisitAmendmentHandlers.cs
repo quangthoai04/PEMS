@@ -124,6 +124,7 @@ public sealed class SubmitVisitAmendmentCommandHandler
             .Include(v => v.CampusInstances).ThenInclude(c => c.FormDetail)
             .Include(v => v.CampusInstances).ThenInclude(c => c.GuestMemberLinks)
             .Include(v => v.GuestMembers)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(v => v.VisitRequestId == request.VisitRequestId, cancellationToken)
             ?? throw new NotFoundException("Đơn đăng ký tham quan", request.VisitRequestId);
         var instance = visit.CampusInstances.FirstOrDefault(c => c.VisitInstanceId == request.VisitInstanceId)

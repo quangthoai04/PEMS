@@ -32,50 +32,80 @@ public class ViewEmailListQueryHandler : IRequestHandler<ViewEmailListQuery, Vie
             currentUserEmail = user?.Email ?? "";
         }
 
-        var sentQuery = _context.SentEmails
-            .Include(e => e.Recipients)
+        // RelatedType/StartDate/EndDate map straight to root SentEmail columns (unlike Keyword/Status
+        // below, which read derived DTO fields), so they are pushed down here — applied identically to
+        // both sent and received before the per-row Recipients lookup, instead of after Union() on the
+        // already-projected+joined rows. Same predicates as before, just evaluated earlier.
+        var baseQuery = _context.SentEmails.AsQueryable();
+
+        if (!string.IsNullOrEmpty(request.RelatedType))
+        {
+            baseQuery = request.RelatedType == "VISIT_REQUEST"
+                ? baseQuery.Where(e => e.RelatedType == "VISIT_REQUEST")
+                : baseQuery.Where(e => e.RelatedType != "VISIT_REQUEST");
+        }
+
+        if (request.StartDate.HasValue)
+        {
+            baseQuery = baseQuery.Where(e => (e.SentAt ?? e.CreatedAt) >= request.StartDate.Value);
+        }
+
+        if (request.EndDate.HasValue)
+        {
+            var endPushedDown = request.EndDate.Value.AddDays(1).AddSeconds(-1);
+            baseQuery = baseQuery.Where(e => (e.SentAt ?? e.CreatedAt) <= endPushedDown);
+        }
+
+        // Two-stage Select: the correlated Recipients lookup is evaluated ONCE per row into `To`/`Mine`
+        // here, then read multiple times below — instead of the original repeating
+        // e.Recipients.FirstOrDefault(...) 3-4 times per row (a separate correlated subquery execution
+        // each time). No Include: it was already dead here (EF drops eager-load Include once a
+        // Select projects a shape of its own — the fields below come from the FirstOrDefault subquery,
+        // not from a materialized Recipients collection).
+        var sentQuery = baseQuery
             .Where(e => e.SentBy == currentUserId)
-            .Select(e => new EmailListItemDto
+            .Select(e => new { Email = e, To = e.Recipients.FirstOrDefault(r => r.RecipientType == "TO") })
+            .Select(x => new EmailListItemDto
             {
-                Id = e.SentEmailId,
+                Id = x.Email.SentEmailId,
                 SourceType = "SENT",
-                Subject = e.Subject,
-                Snippet = e.BodySnapshot != null ? (e.BodySnapshot.Length > 100 ? e.BodySnapshot.Substring(0, 100) : e.BodySnapshot) : null,
-                CounterpartName = e.Recipients.FirstOrDefault(r => r.RecipientType == "TO") != null ? e.Recipients.FirstOrDefault(r => r.RecipientType == "TO").RecipientName : null,
-                CounterpartEmail = e.Recipients.FirstOrDefault(r => r.RecipientType == "TO") != null ? e.Recipients.FirstOrDefault(r => r.RecipientType == "TO").RecipientEmail : null,
-                SentAt = e.SentAt,
-                CreatedAt = e.CreatedAt,
-                SendStatus = e.Status,
-                DeliveryStatus = e.Recipients.FirstOrDefault(r => r.RecipientType == "TO") != null ? e.Recipients.FirstOrDefault(r => r.RecipientType == "TO").DeliveryStatus : null,
-                ProcessStatus = e.DeliveredAt.HasValue ? "COMPLETED" : (e.Status == "FAILED" ? "FAILED" : "PROCESSING"),
-                RelatedType = e.RelatedType,
-                RelatedId = e.RelatedId,
+                Subject = x.Email.Subject,
+                Snippet = x.Email.BodySnapshot != null ? (x.Email.BodySnapshot.Length > 100 ? x.Email.BodySnapshot.Substring(0, 100) : x.Email.BodySnapshot) : null,
+                CounterpartName = x.To != null ? x.To.RecipientName : null,
+                CounterpartEmail = x.To != null ? x.To.RecipientEmail : null,
+                SentAt = x.Email.SentAt,
+                CreatedAt = x.Email.CreatedAt,
+                SendStatus = x.Email.Status,
+                DeliveryStatus = x.To != null ? x.To.DeliveryStatus : null,
+                ProcessStatus = x.Email.DeliveredAt.HasValue ? "COMPLETED" : (x.Email.Status == "FAILED" ? "FAILED" : "PROCESSING"),
+                RelatedType = x.Email.RelatedType,
+                RelatedId = x.Email.RelatedId,
                 CanReply = false,
                 CanConfirm = false,
-                CanMarkComplete = !e.DeliveredAt.HasValue && e.Status != "FAILED"
+                CanMarkComplete = !x.Email.DeliveredAt.HasValue && x.Email.Status != "FAILED"
             });
 
-        var receivedQuery = _context.SentEmails
-            .Include(e => e.Recipients)
+        var receivedQuery = baseQuery
             .Where(e => e.Recipients.Any(r => r.RecipientEmail == currentUserEmail))
-            .Select(e => new EmailListItemDto
+            .Select(e => new { Email = e, Mine = e.Recipients.FirstOrDefault(r => r.RecipientEmail == currentUserEmail) })
+            .Select(x => new EmailListItemDto
             {
-                Id = e.SentEmailId,
+                Id = x.Email.SentEmailId,
                 SourceType = "RECEIVED",
-                Subject = e.Subject,
-                Snippet = e.BodySnapshot != null ? (e.BodySnapshot.Length > 100 ? e.BodySnapshot.Substring(0, 100) : e.BodySnapshot) : null,
+                Subject = x.Email.Subject,
+                Snippet = x.Email.BodySnapshot != null ? (x.Email.BodySnapshot.Length > 100 ? x.Email.BodySnapshot.Substring(0, 100) : x.Email.BodySnapshot) : null,
                 CounterpartName = "System/Sender", // Could join with Users on SentBy if needed
                 CounterpartEmail = "sender@pems.local", // Simplification
-                SentAt = e.SentAt,
-                CreatedAt = e.CreatedAt,
-                SendStatus = e.Status,
-                DeliveryStatus = e.Recipients.FirstOrDefault(r => r.RecipientEmail == currentUserEmail) != null ? e.Recipients.FirstOrDefault(r => r.RecipientEmail == currentUserEmail).DeliveryStatus : null,
-                ProcessStatus = e.DeliveredAt.HasValue ? "COMPLETED" : (e.Status == "FAILED" ? "FAILED" : "PROCESSING"),
-                RelatedType = e.RelatedType,
-                RelatedId = e.RelatedId,
+                SentAt = x.Email.SentAt,
+                CreatedAt = x.Email.CreatedAt,
+                SendStatus = x.Email.Status,
+                DeliveryStatus = x.Mine != null ? x.Mine.DeliveryStatus : null,
+                ProcessStatus = x.Email.DeliveredAt.HasValue ? "COMPLETED" : (x.Email.Status == "FAILED" ? "FAILED" : "PROCESSING"),
+                RelatedType = x.Email.RelatedType,
+                RelatedId = x.Email.RelatedId,
                 CanReply = true,
-                CanConfirm = !e.DeliveredAt.HasValue && e.Status != "FAILED",
-                CanMarkComplete = !e.DeliveredAt.HasValue && e.Status != "FAILED"
+                CanConfirm = !x.Email.DeliveredAt.HasValue && x.Email.Status != "FAILED",
+                CanMarkComplete = !x.Email.DeliveredAt.HasValue && x.Email.Status != "FAILED"
             });
 
         IQueryable<EmailListItemDto> combinedQuery;
@@ -109,24 +139,7 @@ public class ViewEmailListQueryHandler : IRequestHandler<ViewEmailListQuery, Vie
                 combinedQuery = combinedQuery.Where(x => x.ProcessStatus != "COMPLETED" && x.ProcessStatus != "FAILED");
         }
 
-        if (!string.IsNullOrEmpty(request.RelatedType))
-        {
-            if (request.RelatedType == "VISIT_REQUEST")
-                combinedQuery = combinedQuery.Where(x => x.RelatedType == "VISIT_REQUEST");
-            else
-                combinedQuery = combinedQuery.Where(x => x.RelatedType != "VISIT_REQUEST");
-        }
-
-        if (request.StartDate.HasValue)
-        {
-            combinedQuery = combinedQuery.Where(x => (x.SentAt ?? x.CreatedAt) >= request.StartDate.Value);
-        }
-
-        if (request.EndDate.HasValue)
-        {
-            var end = request.EndDate.Value.AddDays(1).AddSeconds(-1);
-            combinedQuery = combinedQuery.Where(x => (x.SentAt ?? x.CreatedAt) <= end);
-        }
+        // RelatedType/StartDate/EndDate already applied above, on baseQuery before the Union.
 
         var totalCount = await combinedQuery.CountAsync(cancellationToken);
 

@@ -180,16 +180,16 @@ public sealed class EditNewsCommandHandler
                     CreatedAt         = now,
                     UpdatedAt         = null
                 };
-                _dbContext.NewsContentSections.Add(section);
-                await _dbContext.SaveChangesAsync(cancellationToken); // get SectionId
-
+                // Added via the navigation, not Add()+flush — EF inserts the parent then the children
+                // in the SAME SaveChangesAsync (the one after this loop), in dependency order, and
+                // backfills SectionId on each child itself. Nothing between here and that SaveChanges
+                // reads section.SectionId.
                 if (dto.SectionFiles is { Count: > 0 })
                 {
                     foreach (var fileDto in dto.SectionFiles)
                     {
-                        _dbContext.NewsSectionFiles.Add(new NewsSectionFile
+                        section.SectionFiles.Add(new NewsSectionFile
                         {
-                            SectionId    = section.SectionId,
                             FileId       = fileDto.FileId,
                             UsageType    = string.IsNullOrWhiteSpace(fileDto.UsageType)
                                 ? "INLINE_IMAGE"
@@ -198,6 +198,7 @@ public sealed class EditNewsCommandHandler
                         });
                     }
                 }
+                _dbContext.NewsContentSections.Add(section);
             }
 
             await _dbContext.SaveChangesAsync(cancellationToken);

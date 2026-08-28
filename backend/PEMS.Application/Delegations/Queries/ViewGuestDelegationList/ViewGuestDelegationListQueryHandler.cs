@@ -229,8 +229,11 @@ public sealed class ViewGuestDelegationListQueryHandler
             item.IsReadOnly = !item.AllowedActions.Any(a => a != VisitListActions.ViewDetail);
         }
 
-        await AttachInstanceChangeSummariesAsync(items, userId, cancellationToken);
-        await AttachNextTasksAsync(items, userId, leaderCampusId, now, cancellationToken);
+        if (!request.SkipEnrichment)
+        {
+            await AttachInstanceChangeSummariesAsync(items, userId, cancellationToken);
+            await AttachNextTasksAsync(items, userId, leaderCampusId, now, cancellationToken);
+        }
 
         return PaginatedResult<VisitRequestManagementItemDto>.Create(items, request.Page, request.PageSize, totalItems);
     }
@@ -1214,12 +1217,11 @@ public sealed class ViewGuestDelegationListQueryHandler
         var userIds = page.SelectMany(r => new[] { r.CurrentHostUserId, r.OperationalContactUserId, r.CampusCancelledBy, r.RequestCancelledBy, r.DecidedBy })
             .Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
 
-        var campusCountByRequest = (await _context.VisitRequestCampuses
-                .Where(vrc => requestIds.Contains(vrc.VisitRequestId))
-                .Select(vrc => vrc.VisitRequestId)
-                .ToListAsync(ct))
-            .GroupBy(id => id)
-            .ToDictionary(g => g.Key, g => g.Count());
+        var campusCountByRequest = await _context.VisitRequestCampuses
+            .Where(vrc => requestIds.Contains(vrc.VisitRequestId))
+            .GroupBy(vrc => vrc.VisitRequestId)
+            .Select(g => new { RequestId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.RequestId, x => x.Count, ct);
 
         // The caller's OWN participant rows on the page's instances. ONE query feeds two different
         // questions, which are deliberately not the same question:

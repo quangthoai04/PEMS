@@ -125,7 +125,7 @@ internal static class OperationalContactGuards
                 .Include(v => v.CampusInstances).ThenInclude(c => c.GuestMemberLinks)
                 .Include(v => v.GuestMembers);
 
-        var visit = await query.FirstOrDefaultAsync(v => v.VisitRequestId == visitRequestId, ct)
+        var visit = await query.AsSplitQuery().FirstOrDefaultAsync(v => v.VisitRequestId == visitRequestId, ct)
             ?? throw new NotFoundException("Đơn đăng ký tham quan", visitRequestId);
 
         var instance = visit.CampusInstances.FirstOrDefault(c => c.VisitInstanceId == visitInstanceId)

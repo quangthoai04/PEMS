@@ -218,11 +218,11 @@ public sealed class GetStaffLeaderReportV2QueryHandler
             .ToList();
 
         var partnerVisitGroups = allPartnerVisits.GroupBy(v => v.PartnerId).ToList();
+        var campusPartnerById = campusPartnerList.ToDictionary(p => p.PartnerId);
         var topPartnerRows = new List<StaffLeaderV2TopPartnerRow>();
         foreach (var group in partnerVisitGroups)
         {
-            var pInfo = campusPartnerList.FirstOrDefault(p => p.PartnerId == group.Key);
-            if (pInfo == null) continue;
+            if (!campusPartnerById.TryGetValue(group.Key, out var pInfo)) continue;
             var instIds = group.Select(g => g.VisitInstanceId).Distinct().ToList();
             topPartnerRows.Add(new StaffLeaderV2TopPartnerRow
             {
@@ -310,6 +310,12 @@ public sealed class GetStaffLeaderReportV2QueryHandler
         static bool CountsForHours(string instanceStatus) =>
             instanceStatus != VisitInstanceStatus.Cancelled && instanceStatus != VisitInstanceStatus.Rejected;
 
+        // Index once instead of re-scanning each full list per personnel row (was O(personnel × rows)).
+        var acceptedParticipantsByUser = participantRows.Where(p => p.Status == "ACCEPTED").ToLookup(p => p.UserId);
+        var participantFbByUser = participantFb.ToLookup(f => f.UserId);
+        var hostedByUser = hostedRows.ToLookup(h => h.UserId);
+        var visitorFbByHostUser = visitorFbByHost.ToLookup(f => f.HostId);
+
         var personnelRows = new List<StaffLeaderV2PersonnelRow>();
         foreach (var u in personnelUsers)
         {
@@ -319,23 +325,22 @@ public sealed class GetStaffLeaderReportV2QueryHandler
             List<int> ratings;
             if (isStudent)
             {
-                var joined = participantRows
-                    .Where(p => p.UserId == u.UserId && p.Status == "ACCEPTED")
+                var joined = acceptedParticipantsByUser[u.UserId]
                     .GroupBy(p => p.VisitInstanceId)
                     .Select(g => g.First())
                     .ToList();
                 visitCount = joined.Count;
                 totalHours = joined.Where(p => CountsForHours(p.InstanceStatus))
                     .Sum(p => Math.Max(0, (p.PlannedEndAt - p.PlannedStartAt).TotalHours));
-                ratings = participantFb.Where(f => f.UserId == u.UserId).Select(f => f.Rating).ToList();
+                ratings = participantFbByUser[u.UserId].Select(f => f.Rating).ToList();
             }
             else
             {
-                var hosted = hostedRows.Where(h => h.UserId == u.UserId).ToList();
+                var hosted = hostedByUser[u.UserId].ToList();
                 visitCount = hosted.Count;
                 totalHours = hosted.Where(h => CountsForHours(h.Status))
                     .Sum(h => Math.Max(0, (h.PlannedEndAt - h.PlannedStartAt).TotalHours));
-                ratings = visitorFbByHost.Where(f => f.HostId == u.UserId).Select(f => f.Rating).ToList();
+                ratings = visitorFbByHostUser[u.UserId].Select(f => f.Rating).ToList();
             }
 
             personnelRows.Add(new StaffLeaderV2PersonnelRow

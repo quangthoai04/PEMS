@@ -3,7 +3,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using HtmlAgilityPack;
 using Microsoft.EntityFrameworkCore;
+using System.Collections.Generic;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Domain.Entities.Documents;
 using SixLabors.ImageSharp;
 
 namespace PEMS.Application.Emails.Utils;
@@ -38,6 +40,23 @@ public class EmailImageLayoutNormalizer : IEmailImageLayoutNormalizer
 
         bool modified = false;
 
+        // Pre-scan (pure in-memory, no DB access): every file id an <img> might need dimensions for,
+        // so the read below is one batched query instead of one per <img> tag.
+        var candidateFileIds = new HashSet<ulong>();
+        foreach (var scanImg in images)
+        {
+            bool hasWidth = int.TryParse(scanImg.GetAttributeValue("width", null), out _);
+            bool hasHeight = int.TryParse(scanImg.GetAttributeValue("height", null), out _);
+            if ((!hasWidth || !hasHeight)
+                && ulong.TryParse(scanImg.GetAttributeValue("data-file-id", null), out ulong candidateId))
+                candidateFileIds.Add(candidateId);
+        }
+        var filesById = candidateFileIds.Count == 0
+            ? new Dictionary<ulong, UploadedFile>()
+            : await _context.Files
+                .Where(f => candidateFileIds.Contains(f.FileId))
+                .ToDictionaryAsync(f => f.FileId, cancellationToken);
+
         foreach (var img in images)
         {
             int? width = null;
@@ -51,8 +70,7 @@ public class EmailImageLayoutNormalizer : IEmailImageLayoutNormalizer
 
             if ((width == null || height == null) && ulong.TryParse(img.GetAttributeValue("data-file-id", null), out ulong fileId))
             {
-                var file = await _context.Files.FirstOrDefaultAsync(f => f.FileId == fileId, cancellationToken);
-                if (file != null)
+                if (filesById.TryGetValue(fileId, out var file))
                 {
                     try
                     {

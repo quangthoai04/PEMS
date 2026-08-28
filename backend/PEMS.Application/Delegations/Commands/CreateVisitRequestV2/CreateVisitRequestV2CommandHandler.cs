@@ -405,21 +405,41 @@ public sealed class CreateVisitRequestV2CommandHandler
         IEnumerable<V2HostProposal> proposals, ulong registrantUserId,
         ulong? actorCampusId, CancellationToken ct)
     {
+        // Batched WITHIN this one call only — this method is still called twice by its two callers (once
+        // pre-transaction, once under the users row lock), and each call independently re-queries the
+        // database, so a role change committed between those two calls is still caught exactly as before.
+        var candidateIds = proposals
+            .Select(p => p.ProposedHostUserId!.Value)
+            .Where(id => id != registrantUserId)
+            .Distinct()
+            .ToList();
+        if (candidateIds.Count == 0) return;
+
+        var candidatesById = await _db.Users
+            .Include(u => u.Role)
+            .Where(u => candidateIds.Contains(u.UserId))
+            .ToDictionaryAsync(u => u.UserId, ct);
+
+        var deptIds = candidatesById.Values
+            .Where(u => u.DepartmentId.HasValue)
+            .Select(u => u.DepartmentId!.Value)
+            .Distinct()
+            .ToList();
+        var deptTypeById = await _db.Departments
+            .Where(d => deptIds.Contains(d.DepartmentId))
+            .ToDictionaryAsync(d => d.DepartmentId, d => d.DepartmentType, ct);
+
         foreach (var proposal in proposals)
         {
             var candidateId = proposal.ProposedHostUserId!.Value;
             if (candidateId == registrantUserId)
                 continue; // Proposing themself — the role × mode matrix already settled this.
 
-            var candidate = await _db.Users
-                .Include(u => u.Role)
-                .FirstOrDefaultAsync(u => u.UserId == candidateId, ct)
-                ?? throw new NotFoundException("User", candidateId);
+            if (!candidatesById.TryGetValue(candidateId, out var candidate))
+                throw new NotFoundException("User", candidateId);
 
-            var candidateDeptType = await _db.Departments
-                .Where(d => d.DepartmentId == candidate.DepartmentId)
-                .Select(d => d.DepartmentType)
-                .FirstOrDefaultAsync(ct);
+            var candidateDeptType = candidate.DepartmentId.HasValue
+                && deptTypeById.TryGetValue(candidate.DepartmentId.Value, out var dt) ? dt : null;
 
             var candidateOk = candidate.Role.RoleCode == RoleCodes.Staff
                 && candidate.SubRole == UserSubRoles.Staff

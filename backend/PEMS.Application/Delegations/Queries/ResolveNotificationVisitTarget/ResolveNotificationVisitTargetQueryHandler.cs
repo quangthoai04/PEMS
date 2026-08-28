@@ -69,6 +69,11 @@ public sealed class ResolveNotificationVisitTargetQueryHandler
                     VisitRequestId = request.VisitRequestId,
                     Page = 1,
                     PageSize = 5,
+                    // This resolver reads Exists/HasAccess/RelationContexts/CanViewRequestDetail/
+                    // CampusProgressItems/statuses/ParticipantId — never ChangeSummary or NextTask (see
+                    // the DTO construction below), so their two extra DB round trips per population are
+                    // pure waste here. See NotificationVisitTargetDto's field list for the full read set.
+                    SkipEnrichment = true,
                 },
                 cancellationToken);
             items.AddRange(page.Items);

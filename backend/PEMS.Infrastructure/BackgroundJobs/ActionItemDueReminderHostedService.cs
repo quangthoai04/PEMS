@@ -8,6 +8,7 @@ using PEMS.Application.Delegations.Minutes;
 using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Application.Emails.Common;
 using PEMS.Application.Notifications.Common;
+using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Emails;
 using PEMS.Domain.Entities.Minutes;
 
@@ -81,11 +82,37 @@ public sealed class ActionItemDueReminderHostedService : BackgroundService
 
         if (due.Count == 0) return;
 
+        // Batch: everything DispatchOneAsync needs to resolve per item, fetched once for the whole
+        // `due` batch instead of once per item. Same filters/joins as before (see the 4 lookups below);
+        // per-item write side (DueReminderSentAt, SaveChangesAsync, try/catch) is UNCHANGED — still runs
+        // exactly once per item, in order, so retry semantics are untouched.
+        var minutesIds = due.Select(a => a.MinutesId).Distinct().ToList();
+        var minutesById = await db.Minutes.AsNoTracking()
+            .Where(m => minutesIds.Contains(m.MinutesId))
+            .ToDictionaryAsync(m => m.MinutesId, ct);
+
+        var instanceIds = minutesById.Values.Select(m => m.VisitInstanceId).Distinct().ToList();
+        var instancesById = await db.VisitRequestCampuses.AsNoTracking()
+            .Where(c => instanceIds.Contains(c.VisitInstanceId))
+            .ToDictionaryAsync(c => c.VisitInstanceId, ct);
+
+        var assigneeIds = due.Where(a => a.AssignedToUserId.HasValue)
+            .Select(a => a.AssignedToUserId!.Value).Distinct().ToList();
+        var assigneesById = await db.Users.AsNoTracking()
+            .Where(u => assigneeIds.Contains(u.UserId))
+            .Select(u => new { u.UserId, u.FullName, u.Email })
+            .ToDictionaryAsync(x => x.UserId, x => (x.FullName, x.Email), ct);
+
+        var delegationNamesByInstance = await VisitInstanceEffectiveName.ForInstancesAsync(
+            db, instancesById.Keys.ToList(), ct);
+
         foreach (var item in due)
         {
             try
             {
-                await DispatchOneAsync(db, email, notificationService, item, now, ct);
+                await DispatchOneAsync(
+                    db, email, notificationService, item, now,
+                    minutesById, instancesById, assigneesById, delegationNamesByInstance, ct);
                 item.DueReminderSentAt = now;
             }
             catch (Exception ex)
@@ -98,30 +125,27 @@ public sealed class ActionItemDueReminderHostedService : BackgroundService
 
     private async Task DispatchOneAsync(
         IApplicationDbContext db, IEmailService email, INotificationService notificationService,
-        MinuteActionItem item, DateTime now, CancellationToken ct)
+        MinuteActionItem item, DateTime now,
+        IReadOnlyDictionary<ulong, Minute> minutesById,
+        IReadOnlyDictionary<ulong, VisitRequestCampus> instancesById,
+        IReadOnlyDictionary<ulong, (string FullName, string Email)> assigneesById,
+        IReadOnlyDictionary<ulong, string?> delegationNamesByInstance,
+        CancellationToken ct)
     {
-        var minute = await db.Minutes.AsNoTracking()
-            .FirstOrDefaultAsync(m => m.MinutesId == item.MinutesId, ct);
-        if (minute == null) return;
+        if (!minutesById.TryGetValue(item.MinutesId, out var minute)) return;
 
-        var instance = await db.VisitRequestCampuses.AsNoTracking()
-            .FirstOrDefaultAsync(c => c.VisitInstanceId == minute.VisitInstanceId, ct);
-        if (instance == null) return;
+        if (!instancesById.TryGetValue(minute.VisitInstanceId, out var instance)) return;
 
-        var assignee = await db.Users.AsNoTracking()
-            .Where(u => u.UserId == item.AssignedToUserId!.Value)
-            .Select(u => new { u.UserId, u.FullName, u.Email })
-            .FirstOrDefaultAsync(ct);
-        if (assignee == null) return;
+        if (item.AssignedToUserId is null
+            || !assigneesById.TryGetValue(item.AssignedToUserId.Value, out var assignee)) return;
 
-        var delegationName = (await VisitInstanceEffectiveName.ForInstancesAsync(db, new[] { instance.VisitInstanceId }, ct))
-            .GetValueOrDefault(instance.VisitInstanceId) ?? "Đoàn khách";
+        var delegationName = delegationNamesByInstance.GetValueOrDefault(instance.VisitInstanceId) ?? "Đoàn khách";
         // Same destination as the assignment notification in SaveMinutesCommandHandler — deep-links
         // straight into "Quản lý việc sau tiếp khách" filtered to this one item.
         var actionUrl = $"/dashboard/post-visit-tasks?actionItemId={item.ActionItemId}";
 
         await notificationService.CreateAsync(new CreateNotificationRequest(
-            RecipientUserId: assignee.UserId,
+            RecipientUserId: item.AssignedToUserId.Value,
             Title: "Đến hạn hoàn thành công việc",
             Message: $"Công việc \"{item.Title}\" bạn phụ trách (đoàn {delegationName}) đã đến hạn hoàn thành.",
             NotificationType: NotificationTypes.ActionItemDue,

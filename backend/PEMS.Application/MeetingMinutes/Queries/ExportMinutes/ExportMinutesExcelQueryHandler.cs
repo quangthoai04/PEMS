@@ -33,6 +33,7 @@ public class ExportMinutesExcelQueryHandler : IRequestHandler<ExportMinutesExcel
         var minute = await _db.Minutes
             .Include(m => m.Participants)
             .Include(m => m.ActionItems)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(m => m.MinutesId == request.MinutesId, cancellationToken)
             ?? throw new NotFoundException("Minute", request.MinutesId);
 

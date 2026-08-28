@@ -120,6 +120,17 @@ public class ViewFeedbackSummaryQueryHandler : IRequestHandler<ViewFeedbackSumma
         var campusNames = await _context.Campuses.Where(c => cIds.Contains(c.CampusId))
             .ToDictionaryAsync(c => c.CampusId, c => c.Name, cancellationToken);
 
+        // Batch: every feedback row for this page's requests, grouped by the SAME (VisitRequestId,
+        // VisitInstanceId) key `grouped` used above, instead of one OrderByDescending+First query per
+        // page row. Scoped to `requestIds` (already computed above) is a safe superset — it may include
+        // a few extra instances of the same requests that did not land on this page, never a wrong request.
+        var latestSubmitterByGroup = (await _context.Feedbacks
+                .Where(f => requestIds.Contains(f.VisitRequestId))
+                .Select(f => new { f.VisitRequestId, f.VisitInstanceId, f.SubmittedAt, f.SubmitterNameSnapshot })
+                .ToListAsync(cancellationToken))
+            .GroupBy(f => (f.VisitRequestId, f.VisitInstanceId))
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(f => f.SubmittedAt).First().SubmitterNameSnapshot);
+
         foreach (var item in projections)
         {
             item.VisitTitle = item.VisitInstanceId.HasValue
@@ -130,10 +141,9 @@ public class ViewFeedbackSummaryQueryHandler : IRequestHandler<ViewFeedbackSumma
             {
                 item.CampusName = cName;
             }
-            
-            var latestFb = await _context.Feedbacks.Where(f => f.VisitRequestId == item.VisitRequestId && f.VisitInstanceId == item.VisitInstanceId)
-                .OrderByDescending(f => f.SubmittedAt).FirstOrDefaultAsync(cancellationToken);
-            item.LatestSubmitterName = latestFb?.SubmitterNameSnapshot;
+
+            item.LatestSubmitterName =
+                latestSubmitterByGroup.GetValueOrDefault((item.VisitRequestId, item.VisitInstanceId));
         }
         
         return PaginatedResult<FeedbackVisitSummaryItem>.Create(projections, request.Page, request.PageSize, total);

@@ -275,6 +275,7 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
             .Include(v => v.CampusInstances).ThenInclude(c => c.FormDetail)
             .Include(v => v.CampusInstances).ThenInclude(c => c.GuestMemberLinks)
             .Include(v => v.GuestMembers)
+            .AsSplitQuery()
             .FirstAsync(v => v.VisitRequestId == amendment.VisitRequestId, ct);
         var instance = request.CampusInstances.Single(c => c.VisitInstanceId == amendment.VisitInstanceId);
         var detail = instance.FormDetail!;

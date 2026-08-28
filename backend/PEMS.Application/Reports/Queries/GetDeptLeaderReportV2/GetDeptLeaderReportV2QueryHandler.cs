@@ -192,23 +192,29 @@ public sealed class GetDeptLeaderReportV2QueryHandler
             .Select(r => r.UserId!.Value)
             .ToList();
 
+        // Index once instead of re-scanning each full list per personnel row (was O(personnel × rows)).
+        var invitationsByUser = invitationRows.ToLookup(r => r.UserId);
+        var logisticsByUser = logisticsRows.ToLookup(r => r.UserId);
+        var participantFbByUser = participantFbRows.ToLookup(f => f.UserId);
+        var declinedByUserLookup = declinedByUser.ToLookup(id => id);
+        var declinedLogisticsByUserLookup = declinedLogisticsByUser.ToLookup(id => id);
+        var logisticsFbByAssignee = logisticsFbRows
+            .Where(x => x.TargetLogisticsItemId != null && itemAssigneeMap.ContainsKey(x.TargetLogisticsItemId.Value))
+            .ToLookup(x => itemAssigneeMap[x.TargetLogisticsItemId!.Value]);
+
         var personnelRows = new List<DeptLeaderV2PersonnelRow>();
         foreach (var u in personnelUsers)
         {
-            var myInvitations = invitationRows.Where(r => r.UserId == u.UserId).ToList();
-            var myLogistics = logisticsRows.Where(r => r.UserId == u.UserId).ToList();
+            var myInvitations = invitationsByUser[u.UserId].ToList();
+            var myLogistics = logisticsByUser[u.UserId].ToList();
             var taskCount = myInvitations.Count(r => IsCompleted("INVITATION", r.Status) || r.Status == "ASSIGNED" || r.Status == "ACCEPTED")
                             + myLogistics.Count(r => r.Status != LogisticsItemStatus.Rejected && r.Status != LogisticsItemStatus.Declined);
             var totalHours = myInvitations.Where(r => CountsForHours("INVITATION", r.Status)).Sum(r => Math.Max(0, (r.PlannedEndAt - r.PlannedStartAt).TotalHours))
                               + myLogistics.Where(r => CountsForHours("REQUEST", r.Status)).Sum(r => Math.Max(0, (r.PlannedEndAt - r.PlannedStartAt).TotalHours));
-            var myRatings = participantFbRows.Where(f => f.UserId == u.UserId).Select(f => f.Rating)
-                .Concat(logisticsFbRows
-                    .Where(x => x.TargetLogisticsItemId != null
-                                && itemAssigneeMap.TryGetValue(x.TargetLogisticsItemId.Value, out var assignee)
-                                && assignee == u.UserId)
-                    .Select(x => x.Rating))
+            var myRatings = participantFbByUser[u.UserId].Select(f => f.Rating)
+                .Concat(logisticsFbByAssignee[u.UserId].Select(x => x.Rating))
                 .ToList();
-            var declinedCount = declinedByUser.Count(id => id == u.UserId) + declinedLogisticsByUser.Count(id => id == u.UserId);
+            var declinedCount = declinedByUserLookup[u.UserId].Count() + declinedLogisticsByUserLookup[u.UserId].Count();
 
             personnelRows.Add(new DeptLeaderV2PersonnelRow
             {

@@ -5,8 +5,10 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Common;
 using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Emails;
 using PEMS.Domain.Entities.Minutes;
+using PEMS.Domain.Entities.Users;
 using PEMS.Shared;
 
 namespace PEMS.Application.Delegations.Minutes;
@@ -305,6 +307,34 @@ public sealed class SaveMinutesCommandHandler
         var addedInternal = new List<MinuteParticipant>();
         var addedGuests = new List<MinuteParticipant>();
 
+        // Prefetch: every candidate new-row user/guest referenced by `inputs`, batched into 2 queries
+        // instead of 1 per new row. Superset is fine — an id that turns out to already be live/dropped
+        // just goes unused from the dictionary; the per-item null/status checks below are unchanged.
+        var candidateUserIds = inputs
+            .Where(i => i.MinuteParticipantId is null && i.UserId.HasValue)
+            .Select(i => i.UserId!.Value)
+            .Distinct()
+            .ToList();
+        var usersById = candidateUserIds.Count == 0
+            ? new Dictionary<ulong, User>()
+            : await _db.Users
+                .Include(x => x.Department).Include(x => x.PrimaryCampus).Include(x => x.Role)
+                .Where(x => candidateUserIds.Contains(x.UserId))
+                .ToDictionaryAsync(x => x.UserId, ct);
+
+        var candidateGuestIds = inputs
+            .Where(i => i.MinuteParticipantId is null && i.GuestMemberId.HasValue)
+            .Select(i => i.GuestMemberId!.Value)
+            .Distinct()
+            .ToList();
+        var guestsById = candidateGuestIds.Count == 0
+            ? new Dictionary<ulong, VisitGuestMember>()
+            // Scope PRESERVED: only guests of THIS request are fetched, matching the original per-item
+            // `g.VisitRequestId == requestId` filter (see MINUTE_GUEST_NOT_IN_CURRENT_REQUEST below).
+            : await _db.VisitGuestMembers
+                .Where(g => candidateGuestIds.Contains(g.GuestMemberId) && g.VisitRequestId == requestId)
+                .ToDictionaryAsync(g => g.GuestMemberId, ct);
+
         foreach (var input in inputs)
         {
             var status = (input.AttendanceStatus ?? string.Empty).Trim().ToUpperInvariant();
@@ -380,9 +410,7 @@ public sealed class SaveMinutesCommandHandler
                     liveUserIds.Add(newUserId);
                     continue;
                 }
-                var u = await _db.Users
-                    .Include(x => x.Department).Include(x => x.PrimaryCampus).Include(x => x.Role)
-                    .FirstOrDefaultAsync(x => x.UserId == newUserId, ct);
+                usersById.TryGetValue(newUserId, out var u);
                 if (u == null)
                     throw new BusinessRuleException("Người dùng được chọn không tồn tại hoặc không còn hoạt động.");
                 if (u.Status != "ACTIVE")
@@ -425,8 +453,7 @@ public sealed class SaveMinutesCommandHandler
                 // Scope check: the guest must belong to THIS minutes' visit_request. A non-existent id or
                 // an id from another request is a reference/scope error — NOT a free-text/external person,
                 // so it gets its own message + code (never the "ngoài hệ thống" one).
-                var guest = await _db.VisitGuestMembers
-                    .FirstOrDefaultAsync(g => g.GuestMemberId == newGuestId && g.VisitRequestId == requestId, ct);
+                guestsById.TryGetValue(newGuestId, out var guest);
                 if (guest == null)
                     throw new BusinessRuleException(
                         "Khách tham gia không thuộc đoàn hiện tại hoặc đã không còn hợp lệ. Vui lòng đồng bộ lại danh sách người tham gia.",

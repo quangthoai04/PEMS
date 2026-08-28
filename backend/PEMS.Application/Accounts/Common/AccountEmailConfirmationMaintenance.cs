@@ -28,6 +28,14 @@ public sealed class AccountEmailConfirmationMaintenance : IAccountEmailConfirmat
     /// <summary>A pending account is auto-cancelled once it is this old with no live confirmation token.</summary>
     public const int AutoCancelGraceDays = 7;
 
+    /// <summary>
+    /// Upper bound on stale accounts processed per sweep — this is the only one of the 7 background jobs
+    /// with no batch cap, so a large backlog loaded the whole set unbounded. The hosted service retries
+    /// every PollSeconds (default 1h), so a backlog above this just finishes over more ticks; oldest-first
+    /// ordering (see RunAsync) means no account is skipped, only delayed.
+    /// </summary>
+    public const int MaxAccountsPerRun = 200;
+
     private readonly IApplicationDbContext _db;
     private readonly IDateTimeService _clock;
 
@@ -58,42 +66,56 @@ public sealed class AccountEmailConfirmationMaintenance : IAccountEmailConfirmat
         var cutoff = now.AddDays(-AutoCancelGraceDays);
         var stale = await _db.Users
             .Where(u => u.Status == UserStatuses.PendingEmailConfirmation && u.CreatedAt < cutoff)
+            .OrderBy(u => u.CreatedAt)
+            .Take(MaxAccountsPerRun)
             .ToListAsync(cancellationToken);
 
         var cancelled = 0;
         var released = 0;
 
+        // Batch: everything the per-user checks below need, fetched once for the whole `stale` set
+        // instead of once per user. Same filters as before, just evaluated in-memory per user afterward.
+        var staleUserIds = stale.Select(u => u.UserId).ToList();
+
+        var tokensByUser = (await _db.AccountEmailConfirmations
+                .Where(c => staleUserIds.Contains(c.UserId)
+                            && (c.Status == AccountEmailConfirmationStatuses.Pending
+                                || c.Status == AccountEmailConfirmationStatuses.Expired))
+                .ToListAsync(cancellationToken))
+            .ToLookup(c => c.UserId);
+
+        var campusesByHeadUser = (await _db.Campuses
+                .Where(c => c.IcHeadUserId != null && staleUserIds.Contains(c.IcHeadUserId!.Value))
+                .ToListAsync(cancellationToken))
+            .ToLookup(c => c.IcHeadUserId!.Value);
+
+        var departmentsByHeadUser = (await _db.Departments
+                .Where(d => d.HeadUserId != null && staleUserIds.Contains(d.HeadUserId!.Value))
+                .ToListAsync(cancellationToken))
+            .ToLookup(d => d.HeadUserId!.Value);
+
         foreach (var user in stale)
         {
-            var hasLiveToken = await _db.AccountEmailConfirmations.AnyAsync(
-                c => c.UserId == user.UserId
-                     && c.Status == AccountEmailConfirmationStatuses.Pending
-                     && c.ExpiresAt >= now,
-                cancellationToken);
+            var myTokens = tokensByUser[user.UserId].ToList();
+            var hasLiveToken = myTokens.Any(
+                c => c.Status == AccountEmailConfirmationStatuses.Pending && c.ExpiresAt >= now);
             if (hasLiveToken) continue;   // still awaiting a valid confirmation — leave it
 
-            var campuses = await _db.Campuses.Where(c => c.IcHeadUserId == user.UserId).ToListAsync(cancellationToken);
-            foreach (var campus in campuses)
+            foreach (var campus in campusesByHeadUser[user.UserId])
             {
                 campus.IcHeadUserId = null;
                 campus.UpdatedAt = now;
                 released++;
             }
 
-            var departments = await _db.Departments.Where(d => d.HeadUserId == user.UserId).ToListAsync(cancellationToken);
-            foreach (var department in departments)
+            foreach (var department in departmentsByHeadUser[user.UserId])
             {
                 department.HeadUserId = null;
                 department.UpdatedAt = now;
                 released++;
             }
 
-            var tokens = await _db.AccountEmailConfirmations
-                .Where(c => c.UserId == user.UserId
-                            && (c.Status == AccountEmailConfirmationStatuses.Pending
-                                || c.Status == AccountEmailConfirmationStatuses.Expired))
-                .ToListAsync(cancellationToken);
-            foreach (var token in tokens)
+            foreach (var token in myTokens)
             {
                 token.Status = AccountEmailConfirmationStatuses.Cancelled;
                 token.CancelledAt = now;

@@ -47,6 +47,7 @@ public sealed class GetVisitInstanceContributionQueryHandler
         var instance = await _db.VisitRequestCampuses
             .Include(c => c.VisitRequest).ThenInclude(v => v.CampusInstances)
             .Include(c => c.VisitRequest).ThenInclude(v => v.GuestMembers)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(c => c.VisitInstanceId == request.VisitInstanceId, cancellationToken)
             ?? throw new NotFoundException("VisitRequestCampus", request.VisitInstanceId);
 

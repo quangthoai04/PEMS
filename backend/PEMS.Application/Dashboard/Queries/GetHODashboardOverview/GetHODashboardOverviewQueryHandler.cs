@@ -108,27 +108,38 @@ public class GetHODashboardOverviewQueryHandler
 
         // 5. Campus Status
         var allCampuses = await _context.Campuses.Where(c => c.Status == "ACTIVE").ToListAsync(cancellationToken);
+        var activeCampusIds = allCampuses.Select(c => c.CampusId).ToList();
+
+        // Batched: same 3 predicates as before, grouped by CampusId instead of re-queried once per
+        // campus. A campus with no matching rows in a group is simply absent from the dictionary —
+        // GetValueOrDefault below reproduces the original CountAsync()==0 for that case.
+        var processingByCampus = await _context.VisitRequestCampuses
+            .Where(c => activeCampusIds.Contains(c.CampusId) && c.Status == VisitInstanceStatuses.DuringVisit)
+            .GroupBy(c => c.CampusId)
+            .Select(g => new { CampusId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.CampusId, x => x.Count, cancellationToken);
+
+        var upcomingByCampus = await _context.VisitRequestCampuses
+            .Where(c => activeCampusIds.Contains(c.CampusId) && c.PlannedStartAt >= now && (c.Status == VisitInstanceStatuses.BeforeVisit || c.Status == VisitInstanceStatuses.Assigned))
+            .GroupBy(c => c.CampusId)
+            .Select(g => new { CampusId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.CampusId, x => x.Count, cancellationToken);
+
+        var alertsByCampus = await (from f in _context.Feedbacks
+                                    join vrc in _context.VisitRequestCampuses on f.VisitInstanceId equals vrc.VisitInstanceId
+                                    where activeCampusIds.Contains(vrc.CampusId) && f.Rating <= 2
+                                    group f by vrc.CampusId into g
+                                    select new { CampusId = g.Key, Count = g.Count() })
+                                    .ToDictionaryAsync(x => x.CampusId, x => x.Count, cancellationToken);
+
         foreach (var campus in allCampuses)
         {
-            var processing = await _context.VisitRequestCampuses
-                .Where(c => c.CampusId == campus.CampusId && c.Status == VisitInstanceStatuses.DuringVisit)
-                .CountAsync(cancellationToken);
-
-            var upcomingCount = await _context.VisitRequestCampuses
-                .Where(c => c.CampusId == campus.CampusId && c.PlannedStartAt >= now && (c.Status == VisitInstanceStatuses.BeforeVisit || c.Status == VisitInstanceStatuses.Assigned))
-                .CountAsync(cancellationToken);
-
-            var alerts = await (from f in _context.Feedbacks
-                                join vrc in _context.VisitRequestCampuses on f.VisitInstanceId equals vrc.VisitInstanceId
-                                where vrc.CampusId == campus.CampusId && f.Rating <= 2
-                                select f.FeedbackId).CountAsync(cancellationToken);
-
             dto.CampusStatus.Add(new HOCampusStatusDto
             {
                 Name = campus.Name,
-                Processing = processing,
-                Upcoming = upcomingCount,
-                Alerts = alerts
+                Processing = processingByCampus.GetValueOrDefault(campus.CampusId),
+                Upcoming = upcomingByCampus.GetValueOrDefault(campus.CampusId),
+                Alerts = alertsByCampus.GetValueOrDefault(campus.CampusId)
             });
         }
 

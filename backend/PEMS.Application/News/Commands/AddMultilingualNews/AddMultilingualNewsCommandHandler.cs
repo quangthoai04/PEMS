@@ -194,17 +194,18 @@ public sealed class AddMultilingualNewsCommandHandler
                     CreatedAt         = now,
                     UpdatedAt         = null
                 };
-                _dbContext.NewsContentSections.Add(section);
-                await _dbContext.SaveChangesAsync(cancellationToken); // get SectionId
-
+                // Added via the navigation, not Add()+flush — EF inserts the parent then the children
+                // in the SAME SaveChangesAsync (the one after this loop), in dependency order, and
+                // backfills SectionId on each child itself. Nothing between here and that SaveChanges
+                // reads section.SectionId.
+                //
                 // Explicit files win; otherwise copy the source translation's mappings.
                 if (dto.SectionFiles is { Count: > 0 })
                 {
                     foreach (var fileDto in dto.SectionFiles)
                     {
-                        _dbContext.NewsSectionFiles.Add(new NewsSectionFile
+                        section.SectionFiles.Add(new NewsSectionFile
                         {
-                            SectionId    = section.SectionId,
                             FileId       = fileDto.FileId,
                             UsageType    = string.IsNullOrWhiteSpace(fileDto.UsageType)
                                 ? "INLINE_IMAGE"
@@ -217,15 +218,15 @@ public sealed class AddMultilingualNewsCommandHandler
                 {
                     foreach (var c in copied)
                     {
-                        _dbContext.NewsSectionFiles.Add(new NewsSectionFile
+                        section.SectionFiles.Add(new NewsSectionFile
                         {
-                            SectionId    = section.SectionId,
                             FileId       = c.FileId,
                             UsageType    = c.UsageType,
                             DisplayOrder = c.DisplayOrder
                         });
                     }
                 }
+                _dbContext.NewsContentSections.Add(section);
             }
 
             await _dbContext.SaveChangesAsync(cancellationToken);

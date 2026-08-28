@@ -65,4 +65,14 @@ public class ViewGuestDelegationListQuery : IRequest<PaginatedResult<VisitReques
     public string? Timing { get; init; }
     public string? SortBy { get; init; }
     public string? SortOrder { get; init; }
+    /// <summary>
+    /// Skips <c>AttachInstanceChangeSummariesAsync</c>/<c>AttachNextTasksAsync</c> — the two enrichment
+    /// passes that fill <see cref="VisitRequestManagementItemDto.ChangeSummary"/> and
+    /// <see cref="VisitRequestManagementItemDto.NextTask"/>, each an extra round trip per page. Every
+    /// other field (RelationContexts, CanViewRequestDetail, CampusProgressItems, statuses, allowed
+    /// actions) is unaffected — this only skips the two fields nothing in this codebase currently reads
+    /// from a caller that opts in. Default false: existing callers (the actual list screens) are
+    /// unchanged.
+    /// </summary>
+    public bool SkipEnrichment { get; init; }
 }
