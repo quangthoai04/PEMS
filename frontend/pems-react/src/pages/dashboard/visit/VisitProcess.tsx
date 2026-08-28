@@ -569,17 +569,92 @@ export function VisitProcess() {
     return localStr.slice(11, 16);
   };
 
-  // Display-only "HH:mm dd/MM/yyyy → HH:mm dd/MM/yyyy" for the planned-window pill. Built from the
-  // date/time parts above (no Date()/toISOString()) — same no-timezone-shift rule as the rest of the tab.
-  const formatPlannedWindow = (startLocal: string, endLocal: string): string => {
-    const fmt = (v: string) => {
-      const d = getDatePart(v);
-      const t = getTimePart(v);
-      if (!d || !t) return '—';
-      const [y, m, day] = d.split('-');
-      return `${t} ${day}/${m}/${y}`;
+  // Display-only "HH:mm dd/MM/yyyy" for one instant. Built from the date/time parts above (no
+  // Date()/toISOString()) — same no-timezone-shift rule as the rest of the tab. Shared by the
+  // planned-window pill below and the row-ordering validation error in saveAgenda, so both read the
+  // same wall-clock value the same way.
+  const formatLocalInstant = (v: string): string => {
+    const d = getDatePart(v);
+    const t = getTimePart(v);
+    if (!d || !t) return '—';
+    const [y, m, day] = d.split('-');
+    return `${t} ${day}/${m}/${y}`;
+  };
+
+  // "HH:mm dd/MM/yyyy → HH:mm dd/MM/yyyy" for the planned-window pill.
+  const formatPlannedWindow = (startLocal: string, endLocal: string): string =>
+    `${formatLocalInstant(startLocal)} → ${formatLocalInstant(endLocal)}`;
+
+  // Wall-clock "YYYY-MM-DDTHH:mm" -> epoch ms, treating the digits AS IF they were UTC (Date.UTC,
+  // never `new Date(str)`/local parsing). Two such epochs subtract to the true elapsed wall-clock
+  // minutes with no DST/browser-offset skew — the ONLY reason Date math is used here at all is to
+  // get that subtraction; every value round-trips through the same treat-as-UTC convention, so the
+  // (fictional) offset cancels out and never reaches an actual DATETIME sent to the API.
+  const parseLocalToFakeUtcEpoch = (local: string): number | null => {
+    if (!local || local.length < 16) return null;
+    const [datePart, timePart] = local.split('T');
+    const [y, m, d] = datePart.split('-').map(Number);
+    const [hh, mm] = timePart.split(':').map(Number);
+    if ([y, m, d, hh, mm].some((n) => Number.isNaN(n))) return null;
+    return Date.UTC(y, m - 1, d, hh, mm);
+  };
+  const formatFakeUtcEpochToLocal = (epochMs: number): string => {
+    const d = new Date(epochMs);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+  };
+
+  /**
+   * Proportionally rescales every agenda item's [start, end) from the OLD planned window onto the
+   * NEW one — same ratio formula as `agendaTemplatesAdapter.scaleTemplateItems` (the "apply a
+   * template" scaler), applied here to an already-concrete agenda instead of a template's relative
+   * offsets, using the visit's own old span as the reference instead of a template's authored span.
+   * A host who stretches "Dự kiến" from 1h to 2h expects the schedule to stretch with it, not stay
+   * pinned to the old hour while the new one sits empty.
+   *
+   * Returns `items` UNCHANGED (no-op) when the window did not actually move, or when either window
+   * is missing/zero-length — rescaling a window that hasn't changed would be pure rounding noise.
+   */
+  const rescaleAgendaItemsToWindow = (
+    oldStartLocal: string, oldEndLocal: string,
+    newStartLocal: string, newEndLocal: string,
+    items: AgendaRow[],
+  ): AgendaRow[] => {
+    if (items.length === 0) return items;
+    if (oldStartLocal === newStartLocal && oldEndLocal === newEndLocal) return items;
+    const oldStart = parseLocalToFakeUtcEpoch(oldStartLocal);
+    const oldEnd = parseLocalToFakeUtcEpoch(oldEndLocal);
+    const newStart = parseLocalToFakeUtcEpoch(newStartLocal);
+    const newEnd = parseLocalToFakeUtcEpoch(newEndLocal);
+    if (oldStart == null || oldEnd == null || newStart == null || newEnd == null) return items;
+    const oldSpanMs = oldEnd - oldStart;
+    const newSpanMs = newEnd - newStart;
+    if (oldSpanMs <= 0 || newSpanMs <= 0) return items;
+
+    // Each boundary computed independently from newStart (never chained off a previous item's
+    // computed end) so per-item minute rounding cannot accumulate into drift — same rule as the
+    // template scaler. Pinned exactly to the new edge at ratio<=0/>=1 rather than left to rounding,
+    // so an item that started/ended exactly at the old window's edge still does at the new one.
+    const scale = (itemLocal: string): string => {
+      const itemEpoch = parseLocalToFakeUtcEpoch(itemLocal);
+      if (itemEpoch == null) return itemLocal;
+      const ratio = (itemEpoch - oldStart) / oldSpanMs;
+      if (ratio <= 0) return newStartLocal;
+      if (ratio >= 1) return newEndLocal;
+      const scaledMinutes = Math.round((ratio * newSpanMs) / 60_000);
+      return formatFakeUtcEpochToLocal(newStart + scaledMinutes * 60_000);
     };
-    return `${fmt(startLocal)} → ${fmt(endLocal)}`;
+
+    return items.map((it) => {
+      const startLocal = scale(it.startLocal);
+      let endLocal = it.endLocal ? scale(it.endLocal) : it.endLocal;
+      // A minute-rounding collision could otherwise land end <= start on a very short item.
+      if (endLocal && endLocal <= startLocal) {
+        const bumpedEpoch = Math.min((parseLocalToFakeUtcEpoch(startLocal) ?? newStart) + 60_000, newEnd);
+        endLocal = formatFakeUtcEpochToLocal(bumpedEpoch);
+      }
+      return { ...it, startLocal, endLocal };
+    });
   };
 
   const isSingleDayVisit = React.useMemo(() => {
@@ -836,23 +911,27 @@ export function VisitProcess() {
     if (isSavingAgenda) return;
 
     // ── Validation (front-end). On failure we NEVER hit the API. ──
-    for (const it of agendaItems) {
+    for (const [idx, it] of agendaItems.entries()) {
+      // Every message below names the row (its 1-based position, plus the title once one is typed)
+      // — with several rows on screen, "Thời gian kết thúc phải sau thời gian bắt đầu." alone leaves
+      // the host guessing which one is wrong.
+      const rowLabel = `Mục ${idx + 1}${it.title.trim() ? ` ("${it.title.trim()}")` : ''}`;
       if (!it.title.trim()) {
-        pushToast('error', 'Vui lòng nhập tiêu đề / nội dung mục lịch trình.');
+        pushToast('error', `Mục ${idx + 1}: vui lòng nhập tiêu đề / nội dung mục lịch trình.`);
         return;
       }
       if (!it.startLocal) {
-        pushToast('error', 'Vui lòng nhập thời gian bắt đầu.');
+        pushToast('error', `${rowLabel}: vui lòng nhập thời gian bắt đầu.`);
         return;
       }
       if (!it.endLocal) {
-        pushToast('error', 'Vui lòng nhập thời gian kết thúc.');
+        pushToast('error', `${rowLabel}: vui lòng nhập thời gian kết thúc.`);
         return;
       }
       // "YYYY-MM-DDTHH:mm" sorts lexically == chronologically, so a plain string compare is safe
       // and (unlike new Date()) introduces no timezone shift.
       if (it.endLocal <= it.startLocal) {
-        pushToast('error', 'Thời gian kết thúc phải sau thời gian bắt đầu.');
+        pushToast('error', `${rowLabel}: thời gian kết thúc phải sau thời gian bắt đầu.`);
         return;
       }
     }
@@ -874,11 +953,52 @@ export function VisitProcess() {
       return;
     }
 
+    // The Host renegotiated the visit window in the same save — stretch/shift every item onto it
+    // proportionally rather than leaving them pinned to the old hours (which would either strand
+    // them short of a widened window or push them past a narrowed one). No-op when the window did
+    // not actually move.
+    const rescaledItems = rescaleAgendaItemsToWindow(
+      toDatetimeLocalInputValue(detail.plannedStartAt),
+      toDatetimeLocalInputValue(detail.plannedEndAt),
+      plannedStartDraft,
+      plannedEndDraft,
+      agendaItems,
+    );
+    // Every item must land inside [plannedStartDraft, plannedEndDraft] — checked AFTER the rescale
+    // above (never before it): rescaling a window that moved already guarantees containment by
+    // construction (every boundary is clamped onto the new edges), so checking the pre-rescale times
+    // against the new window would reject edits the rescale was about to fix on its own. This only
+    // ever fires when the window did NOT move and a row's own time was typed past it.
+    for (const [idx, it] of rescaledItems.entries()) {
+      if (it.startLocal < plannedStartDraft || it.endLocal > plannedEndDraft) {
+        const rowLabel = `Mục ${idx + 1}${it.title.trim() ? ` ("${it.title.trim()}")` : ''}`;
+        pushToast('error', `${rowLabel}: thời gian phải nằm trong khung thời gian dự kiến (${formatPlannedWindow(plannedStartDraft, plannedEndDraft)}).`);
+        return;
+      }
+    }
+
+    // A row must not start before the row listed just above it has finished — the array order IS
+    // the display order and the SequenceOrder persisted below, so "phía trước/phía sau" means
+    // "earlier/later in this list", not sorted by time. Equal boundaries are allowed (back-to-back
+    // items), only starting strictly BEFORE the previous one ended is rejected.
+    for (let idx = 1; idx < rescaledItems.length; idx++) {
+      const prev = rescaledItems[idx - 1];
+      const curr = rescaledItems[idx];
+      if (curr.startLocal < prev.endLocal) {
+        const prevLabel = `Mục ${idx}${prev.title.trim() ? ` ("${prev.title.trim()}")` : ''}`;
+        const currLabel = `Mục ${idx + 1}${curr.title.trim() ? ` ("${curr.title.trim()}")` : ''}`;
+        pushToast('error', `${currLabel} phải bắt đầu sau hoặc bằng lúc ${prevLabel} kết thúc (${formatLocalInstant(prev.endLocal)}).`);
+        return;
+      }
+    }
+
+    if (rescaledItems !== agendaItems) setAgendaItems(rescaledItems);
+
     setIsSavingAgenda(true);
     try {
       // Send local wall-clock verbatim — NO plannedStartAt re-basing, NO toISOString(). Each item
       // keeps its own date, so multi-day agendas survive and repeated saves are idempotent.
-      const items = agendaItems.map((it) => ({
+      const items = rescaledItems.map((it) => ({
         agendaId: it.agendaId ?? undefined,
         title: it.title.trim(),
         startTime: fromDatetimeLocalInputValueToApi(it.startLocal)!,
