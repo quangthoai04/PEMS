@@ -112,8 +112,8 @@ export const CampusVisitDetailCard: React.FC<Props> = ({
   const rows: InfoRow[] = [
     { label: t('visitRequestV2:card.delegationName'), value: campus.delegationName },
     { label: t('visitRequestV2:card.visitType'), value: visitTypeLabel },
-    { label: t('visitRequestV2:card.purpose'), value: campus.purpose, multiline: true },
-    { label: t('visitRequestV2:card.workingContent'), value: campus.workingContent, multiline: true },
+    { label: t('visitRequestV2:card.purpose'), value: campus.purpose },
+    { label: t('visitRequestV2:card.workingContent'), value: campus.workingContent },
     {
       label: t('visitRequestV2:card.workingLanguage'),
       value: campus.workingLanguage === 'VI'
@@ -127,7 +127,7 @@ export const CampusVisitDetailCard: React.FC<Props> = ({
         : t('visitRequestV2:card.mediaDeclined'),
     },
     { label: t('visitRequestV2:card.transportationNote'), value: campus.transportationNote },
-    { label: t('visitRequestV2:card.notes'), value: campus.notes, multiline: true },
+    { label: t('visitRequestV2:card.notes'), value: campus.notes },
   ];
 
   return (

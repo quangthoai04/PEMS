@@ -167,7 +167,7 @@ export function VisitRequestV2SubmittedSummary({ response, values }: Props) {
               </span>
             )}
           </Field>
-          <div className={response.instances.length > 1 ? '' : 'sm:col-span-2'}>
+          <div>
             <Field label={t('visitRequestV2:summary.registrant')}>
               {person(values.registerInfo)}
               <div className="text-xs text-slate-500">
@@ -215,12 +215,8 @@ export function VisitRequestV2SubmittedSummary({ response, values }: Props) {
                 <span className="ml-2 text-xs text-slate-500">{t('visitRequestV2:summary.timezoneValue')}</span>
               </Field>
 
-              <div className="sm:col-span-2">
-                <Field label={t('visitRequestV2:summary.purpose')}>{cv.purpose || none}</Field>
-              </div>
-              <div className="sm:col-span-2">
-                <Field label={t('visitRequestV2:summary.workingContent')}>{cv.workingContent || none}</Field>
-              </div>
+              <Field label={t('visitRequestV2:summary.purpose')}>{cv.purpose || none}</Field>
+              <Field label={t('visitRequestV2:summary.workingContent')}>{cv.workingContent || none}</Field>
 
               <Field label={t('visitRequestV2:summary.workingLanguage')}>
                 {cv.workingLanguage === 'VI'

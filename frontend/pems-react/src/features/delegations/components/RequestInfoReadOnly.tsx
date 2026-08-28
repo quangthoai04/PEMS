@@ -169,13 +169,9 @@ export function DelegationInfoReadOnly({ summary }: { summary?: VisitProcessRequ
         </div>
       </div>
 
-      <div className="space-y-1">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
         <Field label="Mục đích thăm" value={summary?.purpose} multiline />
         <Field label="Nội dung làm việc" value={summary?.workingContent} multiline />
-        {/* Rendered unconditionally, like every other field above. A row that vanishes when the guest
-            left it blank reads as "this form never asked", and the host planning the visit cannot tell
-            that from "asked and nothing to report" — which is exactly what they need to know before
-            they stop looking for dietary or accessibility requirements. */}
         <Field label="Nhận diện phương tiện di chuyển" value={summary?.transportationNote} multiline />
         <Field label="Ghi chú gửi FPTU" value={summary?.notes} multiline />
       </div>
