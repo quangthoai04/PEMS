@@ -83,7 +83,11 @@ public sealed class ResolvedConfirmationSummaryDto
     public int Pending { get; init; }
     public int Declined { get; init; }
     public int Expired { get; init; }
-    /// <summary>True while the whole request is held at the gate (no Staff Leader may see it).</summary>
+    /// <summary>
+    /// False while the whole request is held at the gate — every campus is readable, but none may be
+    /// approved or rejected until the last operational contact confirms. The screen uses it to say
+    /// WHY the decision buttons are absent.
+    /// </summary>
     public bool GateOpen { get; init; }
 }
 

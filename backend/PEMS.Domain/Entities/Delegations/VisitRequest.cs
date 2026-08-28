@@ -85,7 +85,7 @@ public class VisitRequest
     // Aggregate status only (PENDING_CONTACT_CONFIRMATION/PENDING_APPROVAL/PARTIALLY_APPROVED/
     // APPROVED/REJECTED/CANCELLED), derived from campus-instance state. The real approve/reject
     // decision fields live on VisitRequestCampus. While this is PENDING_CONTACT_CONFIRMATION no
-    // Staff Leader may see or process ANY campus of the request.
+    // Staff Leader may DECIDE any campus of the request; they may still read it.
     [Column("status")]
     public string Status { get; set; } = "PENDING_CONTACT_CONFIRMATION";
 

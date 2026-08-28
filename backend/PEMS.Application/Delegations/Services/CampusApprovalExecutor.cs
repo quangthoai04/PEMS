@@ -98,9 +98,11 @@ public sealed class CampusApprovalExecutor : ICampusApprovalExecutor
 
         // ── The global confirmation gate (spec §3.4). It is a property of the WHOLE request, so it does
         //    not follow from the campus check: this campus can be at WAITING_REQUEST_APPROVAL with its
-        //    own contact confirmed while a SIBLING still has nobody, and the request as a whole is then
-        //    invisible to every Staff Leader. The queue filters those rows out, but the queue is not
-        //    authorization — a direct call has to be refused here. ──
+        //    own contact confirmed while a SIBLING still has nobody, and no campus of the request may
+        //    be decided until that one answers. The leader CAN see and open such a request — the list
+        //    lists it and the detail renders it read-only — so a stale page, an over-eager button or a
+        //    hand-written call all reach this method with the gate shut. This is where that is
+        //    refused, and it is the only place it is enforced: a queue is not authorization. ──
         if (VisitRequestStatuses.IsBehindContactGate(visit.Status))
             throw new ConflictException(
                 "Đơn chưa đủ đầu mối vận hành xác nhận nên chưa thể duyệt.",

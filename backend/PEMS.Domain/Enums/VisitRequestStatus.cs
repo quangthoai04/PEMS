@@ -2,9 +2,10 @@ namespace PEMS.Shared;
 
 // Aggregate request status. Derived from campus-instance state; never a decision store itself.
 //
-// PENDING_CONTACT_CONFIRMATION is the global gate: while a request sits here, no Staff Leader of
-// any campus may see or act on it, regardless of whether that particular campus already has its
-// operational contact confirmed.
+// PENDING_CONTACT_CONFIRMATION is the global DECISION gate: while a request sits here, no Staff
+// Leader of any campus may approve or reject it, regardless of whether that particular campus
+// already has its operational contact confirmed. They may still SEE it — visibility follows the
+// ordinary campus responsibility rules and this status never withholds it.
 //
 // NOTE: PEMS.Domain.Constants.VisitRequestStatuses carries the same values. Both are kept in sync
 // by hand; do not add a member to one without the other.

@@ -581,7 +581,12 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   // UC-136: read-only popup of the cancellation reason (Host / Visitor / Staff Leader / HO).
   const [cancelReason, setCancelReason] = useState<{ open: boolean; row: Row | null }>({ open: false, row: null });
   const [reject, setReject] = useState<{ open: boolean; row: Row | null; action: AllowedAction | null; text: string; submitting: boolean; error: string | null }>({ open: false, row: null, action: null, text: '', submitting: false, error: null });
-  const [cancel, setCancel] = useState<{ open: boolean; row: Row | null; mode: 'visitor' | 'host' | null; instanceId?: number | null; text: string; submitting: boolean; error: string | null; confirmed: boolean }>({ open: false, row: null, mode: null, instanceId: null, text: '', submitting: false, error: null, confirmed: false });
+  // `instanceId` is the MUTATION target; `instanceCampusName` is the DISPLAY target, and they are
+  // deliberately separate fields. The row is the request-level parent, so `row.campus` reads
+  // "2 cơ sở" on a multi-campus request — fine as the heading of the whole request, wrong as the
+  // name of the ONE campus the accordion's cancel button points at. Naming the campus from the
+  // clicked child keeps the modal's wording honest without letting it near the endpoint choice.
+  const [cancel, setCancel] = useState<{ open: boolean; row: Row | null; mode: 'visitor' | 'host' | null; instanceId?: number | null; instanceCampusName?: string | null; text: string; submitting: boolean; error: string | null; confirmed: boolean }>({ open: false, row: null, mode: null, instanceId: null, instanceCampusName: null, text: '', submitting: false, error: null, confirmed: false });
   const [assign, setAssign] = useState<{ open: boolean; row: Row | null; mode: 'approve' }>({ open: false, row: null, mode: 'approve' });
   // Hand the reception owner over without leaving the list. Only ever opened from an INSTANCE-scoped
   // TRANSFER_HOST verdict — the row's own for a single campus, the accordion's for a multi-campus one.
@@ -2428,8 +2433,12 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     openCampusRequestForm(row, item);
   };
 
+  // Both targets come from the CLICKED child: the id the campus endpoint needs, and the name the
+  // modal shows. Same `|| '-'` shape as openCampusRejectReason / openCampusCancelReason below,
+  // since campusName is nullable. Every field is written fresh here, so reopening the modal on a
+  // different campus can never show the previous one's name.
   const openCampusCancel = (row: Row, item: CampusProgressItem) =>
-    setCancel({ open: true, row, mode: 'visitor', instanceId: item.visitInstanceId, text: '', submitting: false, error: null, confirmed: false });
+    setCancel({ open: true, row, mode: 'visitor', instanceId: item.visitInstanceId, instanceCampusName: item.campusName || '-', text: '', submitting: false, error: null, confirmed: false });
 
   const openCampusRejectReason = (row: Row, item: CampusProgressItem) => {
     const campusRow = {
@@ -3238,7 +3247,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                 <AlertCircle className="w-5 h-5 bg-white/20 rounded-full p-0.5" />
                 {cancel.row.requestStatus === 'PENDING_APPROVAL' ? tt('visitRequestV2:list.cancelModal.titlePending')
                   : cancel.row.visitScope === 'SINGLE_CAMPUS' ? tt('visitRequestV2:list.cancelModal.titleSingleCampus')
-                    : cancel.instanceId ? tt('visitRequestV2:list.cancelModal.titleInstance', { campus: cancel.row.campus })
+                    : cancel.instanceId ? tt('visitRequestV2:list.cancelModal.titleInstance', { campus: cancel.instanceCampusName ?? cancel.row.campus })
                       : tt('visitRequestV2:list.cancelModal.titleMultiCampus')}
               </h3>
               <button type="button" disabled={cancel.submitting} onClick={() => setCancel({ open: false, row: null, mode: null, text: '', submitting: false, error: null, confirmed: false })} className="text-white/85 hover:text-white hover:bg-white/10 rounded-full p-1.5 cursor-pointer"><X className="w-5 h-5" /></button>
@@ -3248,7 +3257,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                 <p className="text-sm font-normal text-gray-800 mb-1">
                   {cancel.row.requestStatus === 'PENDING_APPROVAL' ? tt('visitRequestV2:list.cancelModal.bodyPending')
                     : cancel.row.visitScope === 'SINGLE_CAMPUS' ? tt('visitRequestV2:list.cancelModal.bodySingleCampus')
-                      : cancel.instanceId ? tt('visitRequestV2:list.cancelModal.bodyInstance', { campus: cancel.row.campus })
+                      : cancel.instanceId ? tt('visitRequestV2:list.cancelModal.bodyInstance', { campus: cancel.instanceCampusName ?? cancel.row.campus })
                         : tt('visitRequestV2:list.cancelModal.bodyMultiCampus')}
                 </p>
                 <p className="text-sm text-gray-500">

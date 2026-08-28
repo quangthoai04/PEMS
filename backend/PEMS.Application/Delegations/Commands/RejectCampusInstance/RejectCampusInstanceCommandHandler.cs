@@ -77,9 +77,11 @@ public sealed class RejectCampusInstanceCommandHandler
         if (visit.Status == VisitRequestStatuses.Cancelled)
             throw new ConflictException("Đơn đã bị hủy nên không thể từ chối.");
 
-        // The same global gate as approve (spec §6.1). Reject is a decision too, and a decision taken
-        // while a sibling campus still has no confirmed contact is taken on a request nobody was
-        // supposed to be able to see yet.
+        // The same global gate as approve (spec §6.1), and for the same reason: reject is a decision
+        // too, and no campus of a request may be decided while a sibling still has no confirmed
+        // contact. Protecting only approve would leave the whole rule bypassable through the cheaper
+        // of the two outcomes. Seeing the request is separately allowed — the leader can read it and
+        // its row appears in their queue — so this guard, not the queue, is what holds the line.
         if (VisitRequestStatuses.IsBehindContactGate(visit.Status))
             throw new ConflictException(
                 "Đơn chưa đủ đầu mối vận hành xác nhận nên chưa thể từ chối.",
