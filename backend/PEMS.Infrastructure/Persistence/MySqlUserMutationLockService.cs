@@ -28,22 +28,22 @@ public sealed class MySqlUserMutationLockService : IUserMutationLockService
     public MySqlUserMutationLockService(ApplicationDbContext db) => _db = db;
 
     public Task LockUsersAsync(IReadOnlyCollection<ulong> userIds, CancellationToken cancellationToken)
-        => LockAsync("users", "user_id", userIds, cancellationToken);
+        => LockAsync(LockTarget.Users, userIds, cancellationToken);
 
     public Task LockDepartmentsAsync(IReadOnlyCollection<ulong> departmentIds, CancellationToken cancellationToken)
-        => LockAsync("departments", "department_id", departmentIds, cancellationToken);
+        => LockAsync(LockTarget.Departments, departmentIds, cancellationToken);
 
     public Task LockVisitRequestsAsync(IReadOnlyCollection<ulong> visitRequestIds, CancellationToken cancellationToken)
-        => LockAsync("visit_requests", "visit_request_id", visitRequestIds, cancellationToken);
+        => LockAsync(LockTarget.VisitRequests, visitRequestIds, cancellationToken);
 
     public Task LockVisitRequestCampusesAsync(IReadOnlyCollection<ulong> visitInstanceIds, CancellationToken cancellationToken)
-        => LockAsync("visit_request_campuses", "visit_instance_id", visitInstanceIds, cancellationToken);
+        => LockAsync(LockTarget.VisitRequestCampuses, visitInstanceIds, cancellationToken);
 
     public Task LockVisitParticipantsAsync(IReadOnlyCollection<ulong> participantIds, CancellationToken cancellationToken)
-        => LockAsync("visit_participants", "participant_id", participantIds, cancellationToken);
+        => LockAsync(LockTarget.VisitParticipants, participantIds, cancellationToken);
 
     public Task LockVisitLogisticsItemsAsync(IReadOnlyCollection<ulong> logisticsItemIds, CancellationToken cancellationToken)
-        => LockAsync("visit_logistics_items", "logistics_item_id", logisticsItemIds, cancellationToken);
+        => LockAsync(LockTarget.VisitLogisticsItems, logisticsItemIds, cancellationToken);
 
     public async Task LockEmailActionTokenGroupAsync(string? actionGroupKey, CancellationToken cancellationToken)
     {
@@ -57,14 +57,39 @@ public sealed class MySqlUserMutationLockService : IUserMutationLockService
             cancellationToken);
     }
 
+    /// <summary>
+    /// Closed set of tables this service ever locks. Table/column names cannot be parameterised in
+    /// SQL, so instead of taking them as strings (which a future overload or call site could pass
+    /// through from somewhere less trustworthy than the 6 callers above) this enum makes it a compile
+    /// error to lock anything outside this list — <see cref="Resolve"/> is the only place the actual
+    /// identifiers exist.
+    /// </summary>
+    private enum LockTarget
+    {
+        Users, Departments, VisitRequests, VisitRequestCampuses, VisitParticipants, VisitLogisticsItems
+    }
+
+    private static (string Table, string KeyColumn) Resolve(LockTarget target) => target switch
+    {
+        LockTarget.Users => ("users", "user_id"),
+        LockTarget.Departments => ("departments", "department_id"),
+        LockTarget.VisitRequests => ("visit_requests", "visit_request_id"),
+        LockTarget.VisitRequestCampuses => ("visit_request_campuses", "visit_instance_id"),
+        LockTarget.VisitParticipants => ("visit_participants", "participant_id"),
+        LockTarget.VisitLogisticsItems => ("visit_logistics_items", "logistics_item_id"),
+        _ => throw new System.ArgumentOutOfRangeException(nameof(target)),
+    };
+
     private async Task LockAsync(
-        string table, string keyColumn, IReadOnlyCollection<ulong> ids, CancellationToken cancellationToken)
+        LockTarget target, IReadOnlyCollection<ulong> ids, CancellationToken cancellationToken)
     {
         if (ids is null || ids.Count == 0) return;
 
         // A non-relational provider (the EF InMemory context the unit suite uses) has no row locks
         // to take; correctness there comes from the tests being single-threaded.
         if (!_db.Database.IsRelational()) return;
+
+        var (table, keyColumn) = Resolve(target);
 
         var ordered = ids.Distinct().OrderBy(id => id)
             .Select(id => id.ToString(CultureInfo.InvariantCulture));
