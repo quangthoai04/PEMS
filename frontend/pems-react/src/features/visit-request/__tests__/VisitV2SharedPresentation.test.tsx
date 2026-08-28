@@ -169,7 +169,7 @@ describe('visitStatus helpers', () => {
   // checked at its source. A key present in one file and missing in the other falls back silently:
   // the reader gets Vietnamese in an English UI, or "Unknown" again.
   it.each([
-    ['vi', viVisitRequestV2, 'Chờ đầu mối đoàn khách xác nhận'],
+    ['vi', viVisitRequestV2, 'Đang xử lý (Chờ xác nhận)'],
     ['en', enVisitRequestV2, 'Awaiting delegation contact confirmation'],
   ])('labels the confirmation gate in %s, on both enums', (_lang, bundle, expected) => {
     const status = (bundle as { status: { request: Record<string, string>; instance: Record<string, string> } }).status;

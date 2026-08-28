@@ -66,7 +66,7 @@ import { VisitRowActionMenu, type VisitRowMenuItem } from '../../../features/del
 import VisitHostTransferModal, { type HostTransferTarget } from '../../../features/visit-request/components/VisitHostTransferModal';
 import { isInstanceVersionConflict, INSTANCE_VERSION_CONFLICT_MESSAGE } from '../../../features/visit-request/utils/decisionConflict';
 import { getMyOperationalContactInvitations } from '../../../features/visit-request/api/visitRequestV2Api';
-import { formatLocalizedDate, formatLocalizedDateTime, type UiLanguage } from '../../../shared/utils/vietnamTime';
+import { formatLocalizedDate, formatLocalizedDateTime, formatSmartVietnamRange, toVietnamDateKey, type UiLanguage } from '../../../shared/utils/vietnamTime';
 import { getApiErrorMessage, showErrorToast, showSuccessToast } from '../../../shared/utils/toast';
 type Tab = 'responsible' | 'attending' | 'registered' | 'hosted' | 'all';
 
@@ -655,18 +655,16 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
   /**
    * Hiển thị lịch tiếp:
-   * - Cùng ngày: "DD/MM/YYYY HH:mm - HH:mm"
+   * - Cùng ngày: "DD/MM/YYYY | HH:mm - HH:mm"
    * - Khác ngày: trả về null (caller sẽ dùng layout Từ/Đến 2 dòng)
    */
   const formatSameDayRange = (start?: string | null, end?: string | null): string | null => {
     if (!start || !end) return null;
-    const startDT = formatLocalizedDateTime(start, language);
-    const endDT = formatLocalizedDateTime(end, language);
-    if (startDT === '-' || endDT === '-') return null;
-    // So sánh phần ngày (10 ký tự đầu "DD/MM/YYYY")
-    if (startDT.slice(0, 10) === endDT.slice(0, 10)) {
-      // Cùng ngày: hiện "DD/MM/YYYY HH:mm - HH:mm"
-      return `${startDT} - ${endDT.slice(11)}`;
+    const startKey = toVietnamDateKey(start);
+    const endKey = toVietnamDateKey(end);
+    if (!startKey || !endKey) return null;
+    if (startKey === endKey) {
+      return formatSmartVietnamRange(start, end);
     }
     return null; // khác ngày
   };
@@ -2008,10 +2006,28 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       awaitingConfirmation: tt('visitRequestV2:list.statusBadge.awaitingConfirmation.title'),
     };
 
-    // Layer 1 — the process status, and ONLY that. Tiếng Việt luôn ưu tiên statusLabel backend
-    // (single source of truth cho mọi role còn lại — không đổi hành vi hiện có). Tiếng Anh backend
-    // chưa hỗ trợ, nên tự tính lại hoàn toàn từ mã trạng thái qua i18n ở trên.
     statusText = isEnglish ? labelByKind[kind] : (row.statusLabel || labelByKind[kind]);
+
+    // Đối với cán bộ cơ sở (!isHO && !isVisitor), họ chỉ quản lý/duyệt cơ sở của họ.
+    // Nếu cơ sở của họ đã duyệt (campusStatus = ASSIGNED/APPROVED), hiển thị "Đã duyệt" chứ không hiển thị "Đã duyệt X cơ sở".
+    if (!isHO && !isVisitor && row.campusStatus && ['APPROVED', 'ASSIGNED'].includes(row.campusStatus)) {
+      statusText = isEnglish ? 'Approved' : 'Đã duyệt';
+    } else if (row.requestStatus === 'PARTIALLY_APPROVED' || row.effectiveStatusCode === 'PARTIALLY_APPROVED' || statusText.includes('Duyệt một phần') || statusText.includes('duyệt một phần')) {
+      const items = row.campusProgressItems || [];
+      const totalCount = items.length > 0 ? items.length : (row.campusCount || 0);
+      const approvedCount = items.filter(cp =>
+        ['APPROVED', 'ASSIGNED', 'BEFORE_VISIT', 'DURING_VISIT', 'AFTER_VISIT', 'CLOSED'].includes(cp.instanceStatus)
+      ).length;
+
+      if (totalCount > 0 && approvedCount >= totalCount) {
+        statusText = isEnglish ? 'Approved' : 'Đã duyệt';
+      } else {
+        const count = approvedCount > 0 ? approvedCount : 1;
+        statusText = isEnglish
+          ? `${count} ${count === 1 ? 'campus' : 'campuses'} approved`
+          : `Đã duyệt ${count} cơ sở`;
+      }
+    }
     return (
       <span className="inline-flex flex-col items-start gap-1">
         <span title={titleByKind[kind]} className={`${base} ${clsByKind[kind]}`}>{statusText}</span>
