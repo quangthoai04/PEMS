@@ -1,8 +1,10 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Domain.Constants;
+using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -74,6 +76,9 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetInvitationDetail
 
         public async Task<InvitationDetailDto> Handle(GetInvitationDetailQuery request, CancellationToken cancellationToken)
         {
+            if (!_currentUserService.IsAuthenticated || _currentUserService.UserId is null)
+                throw new ForbiddenException();
+
             var p = await _context.VisitParticipants
                 .Include(p => p.VisitInstance)
                     .ThenInclude(c => c.VisitRequest)
@@ -81,16 +86,34 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetInvitationDetail
 
             if (p == null) return null;
 
+            string responderName = "Người dùng";
+            var responder = await _context.Users.FirstOrDefaultAsync(u => u.UserId == p.UserId, cancellationToken);
+            if (responder != null) responderName = $"{responder.FullName} - {responder.SubRole ?? "Chuyên viên"}";
+
+            // The invitee may always view their own invitation, regardless of role or department — the
+            // same ownership rule VisitInvitationResponse.ApplyCoreAsync already applies to answering it
+            // (accept/decline), so a Host/Student/IC-support invitee with no DepartmentId at all must not
+            // lose read access here either. On top of that, this module's own list
+            // (GetAssignmentsProgressListQueryHandler, ItemType=INVITATION) additionally grants a
+            // Department LEADER oversight of every invitation addressed to their own department's
+            // roster — a Department STAFF member gets no such extra grant, self-view only.
+            bool isSelf = p.UserId == _currentUserService.UserId.Value;
+            bool isDepartmentLeaderOversight =
+                !isSelf
+                && responder != null
+                && _currentUserService.DepartmentId is not null
+                && responder.DepartmentId == _currentUserService.DepartmentId.Value
+                && string.Equals(_currentUserService.RoleCode, RoleCodes.Department, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(_currentUserService.SubRole, UserSubRoles.Staff, StringComparison.OrdinalIgnoreCase);
+            if (!isSelf && !isDepartmentLeaderOversight)
+                throw new ForbiddenException("Không có quyền xem lời mời của người khác");
+
             string senderName = "Hệ thống";
             if (p.InvitedBy.HasValue)
             {
                 var sender = await _context.Users.FirstOrDefaultAsync(u => u.UserId == p.InvitedBy.Value, cancellationToken);
                 if (sender != null) senderName = sender.FullName;
             }
-
-            string responderName = "Người dùng";
-            var responder = await _context.Users.FirstOrDefaultAsync(u => u.UserId == p.UserId, cancellationToken);
-            if (responder != null) responderName = $"{responder.FullName} - {responder.SubRole ?? "Chuyên viên"}";
 
             var camp = p.VisitInstance;
             var unifiedStatus = NormalizeStatus(p.Status, p.AssignedBy != null, camp.Status, camp.PlannedStartAt, camp.PlannedEndAt);

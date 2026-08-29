@@ -52,7 +52,21 @@ public sealed class RequestDetailV2Tests
         Assert.True(_dbUp!.Value, "pems_pr3_test is not reachable — import the PR-2 master into it to run these tests.");
     }
 
-    // The handler never reads ICurrentUserService; it is only needed to construct VisitFormReadService.
+    // DB-AUTHZ-001: the handler now enforces department scope (see GetRequestDetailQueryHandler), so
+    // this fake must carry a DepartmentId, and every seeded logistics item must be routed to the same
+    // one (see NewLogisticsItem) — otherwise every call in this file would be refused before it ever
+    // reached the V2 read-path behaviour these tests exist to verify. VisitFormReadService itself still
+    // never reads ICurrentUserService. requested_to_department_id has a real FK to departments, so this
+    // has to be an id that actually exists — resolved once per run and cached, same as _dbUp above.
+    private static ulong? _fakeDepartmentId;
+
+    private static async Task<ulong> ResolveFakeDepartmentIdAsync(ApplicationDbContext db)
+    {
+        _fakeDepartmentId ??= await db.Departments.AsNoTracking()
+            .OrderBy(d => d.DepartmentId).Select(d => d.DepartmentId).FirstAsync();
+        return _fakeDepartmentId.Value;
+    }
+
     private sealed class FakeUser : ICurrentUserService
     {
         public bool IsAuthenticated => true;
@@ -62,13 +76,13 @@ public sealed class RequestDetailV2Tests
         public string? RoleCode => RoleCodes.Visitor;
         public string? SubRole => null;
         public ulong? PrimaryCampusId => null;
-        public ulong? DepartmentId => null;
+        public ulong? DepartmentId => _fakeDepartmentId;
         public ulong? SessionId => null;
         public string? LoginPortal => null;
     }
 
     private static GetRequestDetailQueryHandler Handler(ApplicationDbContext db)
-        => new(db, new VisitFormReadService(db, new FakeUser(), NullLogger<VisitFormReadService>.Instance));
+        => new(db, new VisitFormReadService(db, new FakeUser(), NullLogger<VisitFormReadService>.Instance), new FakeUser());
 
     private static Task<RequestDetailDto> Run(ApplicationDbContext db, ulong logisticsItemId)
         => Handler(db).Handle(new GetRequestDetailQuery { LogisticsItemId = logisticsItemId }, CancellationToken.None);
@@ -356,9 +370,11 @@ public sealed class RequestDetailV2Tests
         FormRevision = 1, ApprovalRevision = 1, CreatedAt = DateTime.Now,
     };
 
-    private static VisitLogisticsItem NewLogisticsItem(ulong instanceId) => new()
+    private static VisitLogisticsItem NewLogisticsItem(ulong instanceId, ulong departmentId) => new()
     {
         VisitInstanceId = instanceId,
+        // Must match FakeUser.DepartmentId — GetRequestDetailQueryHandler now checks this (DB-AUTHZ-001).
+        RequestedToDepartmentId = departmentId,
         ItemType = "ROOM",
         Title = "Phòng họp",
         // The ITEM's own free text. Distinct from every form literal: if this ever surfaces as
@@ -388,11 +404,12 @@ public sealed class RequestDetailV2Tests
         db.VisitRequests.Add(req);
         await db.SaveChangesAsync();
 
+        var departmentId = await ResolveFakeDepartmentIdAsync(db);
         var ordered = req.CampusInstances.OrderBy(c => c.CampusId).ToList();
         var itemIds = new List<ulong>();
         foreach (var inst in ordered)
         {
-            var item = NewLogisticsItem(inst.VisitInstanceId);
+            var item = NewLogisticsItem(inst.VisitInstanceId, departmentId);
             db.VisitLogisticsItems.Add(item);
             await db.SaveChangesAsync();
             itemIds.Add(item.LogisticsItemId);

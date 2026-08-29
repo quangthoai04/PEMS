@@ -34,6 +34,18 @@ public sealed class GetMyHostFeedbackQueryHandler
         var visitRequest = await _db.VisitRequests.AsNoTracking()
             .FirstOrDefaultAsync(r => r.VisitRequestId == instance.VisitRequestId, cancellationToken)
             ?? throw new NotFoundException("VisitRequest", instance.VisitRequestId);
+
+        // The feedback rows below were already correctly scoped to TargetUserId == userId, but the
+        // surrounding visit/delegation/host metadata was not gated at all — any authenticated user
+        // could read another delegation's org name, campus, host and schedule by guessing an id. This
+        // screen's audience is whoever the Host could have rated (an internal relation to the
+        // instance — host, staff leader, IC/dept support, student), the same primitive
+        // GetVisitInstanceParticipantsQueryHandler already uses for the same instance.
+        var relation = await PEMS.Application.Delegations.Common.VisitInstanceAccess.ResolveRelationAsync(
+            _db, _currentUser, instance, visitRequest, cancellationToken);
+        if (!PEMS.Application.Delegations.Common.VisitInstanceAccess.CanViewInternal(relation))
+            throw new ForbiddenException("Bạn không có quyền xem đánh giá cho chuyến thăm này.");
+
         var campusName = await _db.Campuses.AsNoTracking()
             .Where(c => c.CampusId == instance.CampusId)
             .Select(c => c.Name)

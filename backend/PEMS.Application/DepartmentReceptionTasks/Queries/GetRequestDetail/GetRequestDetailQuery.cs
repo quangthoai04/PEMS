@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Utils;
 using PEMS.Application.Delegations.Services.VisitFormRead;
@@ -122,21 +123,34 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
     {
         private readonly IApplicationDbContext _context;
         private readonly IVisitFormReadService _formReadService;
+        private readonly ICurrentUserService _currentUser;
 
-        public GetRequestDetailQueryHandler(IApplicationDbContext context, IVisitFormReadService formReadService)
+        public GetRequestDetailQueryHandler(
+            IApplicationDbContext context, IVisitFormReadService formReadService, ICurrentUserService currentUser)
         {
             _context = context;
             _formReadService = formReadService;
+            _currentUser = currentUser;
         }
 
         public async Task<RequestDetailDto> Handle(GetRequestDetailQuery request, CancellationToken cancellationToken)
         {
+            if (!_currentUser.IsAuthenticated || _currentUser.UserId is null || _currentUser.DepartmentId is null)
+                throw new ForbiddenException();
+
             var l = await _context.VisitLogisticsItems
                 .Include(l => l.VisitInstance)
                     .ThenInclude(c => c.VisitRequest)
                 .FirstOrDefaultAsync(l => l.LogisticsItemId == request.LogisticsItemId, cancellationToken);
 
             if (l == null) return null;
+
+            // Same department-ownership rule the write side of this screen already enforces (see
+            // ConfirmRequestCommand/RejectRequestCommand/... in this module) — a logistics request
+            // belongs to the department it was routed to, and nobody outside that department may read
+            // its detail, same as they may not act on it.
+            if (l.RequestedToDepartmentId != _currentUser.DepartmentId.Value)
+                throw new ForbiddenException("Không có quyền xem đơn yêu cầu của phòng ban khác");
 
             // Assignment history (fetched first: attempt assignee IDs feed the batched user lookup below)
             var attempts = await _context.VisitLogisticsAssignmentAttempts
