@@ -196,6 +196,67 @@ public sealed class CreateNewsCommandHandler
 
         var now = VietnamTime.Now();
 
+        // ── DB-TXN-007: the auto-translate HTTP call moves out of the write transaction. ──
+        // It previously ran between BeginTransactionAsync and CommitAsync, holding the transaction
+        // open for the duration of an external round trip. The call only needs sanitizedTitle /
+        // sanitizedSummary / request.ContentSections — none of which depend on the transaction or on
+        // news.NewsId (only known after the News row is inserted below) — so it can run entirely
+        // before the transaction opens. The only thing deferred to inside the transaction is the
+        // logging, which still needs news.NewsId to match the original messages; logging performs no
+        // DB work and holds nothing. Failure tolerance is unchanged: a translate hiccup was already
+        // caught by its own nested try/catch and never reached the transaction's rollback path, so the
+        // post is created Vietnamese-only exactly as before — this only changes when the HTTP call is
+        // issued, not whether/how a failure is handled or whether the post gets created.
+        string? autoTranslatedTitle = null;
+        string? autoTranslatedSummary = null;
+        List<CreateNewsContentSectionDto>? autoTranslatedSections = null;
+        Exception? autoTranslateException = null;
+        var hasEnglishInput = request.EnglishContentSections is { Count: > 0 };
+
+        if (!hasEnglishInput)
+        {
+            try
+            {
+                var orderedSectionsForTranslate = request.ContentSections.OrderBy(s => s.SectionOrder).ToList();
+
+                var plainInputs = new List<string> { sanitizedTitle, sanitizedSummary };
+                plainInputs.AddRange(orderedSectionsForTranslate.Select(s => string.IsNullOrWhiteSpace(s.SectionTitle) ? " " : s.SectionTitle));
+                var htmlInputs = orderedSectionsForTranslate.Select(s => s.SectionBodyHtml).ToList();
+
+                var plainResults = await _translator.TranslateTextAsync(
+                    plainInputs, NewsConstants.Languages.Default, "en", cancellationToken);
+                var htmlResults = await _translator.TranslateHtmlAsync(
+                    htmlInputs, NewsConstants.Languages.Default, "en", cancellationToken);
+
+                var candidateTitle = _sanitizer.Sanitize(plainResults[0]).Trim();
+                var candidateSummary = _sanitizer.Sanitize(plainResults[1]).Trim();
+
+                if (!string.IsNullOrWhiteSpace(candidateTitle))
+                {
+                    var candidateSections = new List<CreateNewsContentSectionDto>(orderedSectionsForTranslate.Count);
+                    for (var i = 0; i < orderedSectionsForTranslate.Count; i++)
+                    {
+                        candidateSections.Add(new CreateNewsContentSectionDto
+                        {
+                            SectionOrder = orderedSectionsForTranslate[i].SectionOrder,
+                            SectionTitle = _sanitizer.Sanitize(plainResults[2 + i]).Trim(),
+                            SectionBodyHtml = _sanitizer.Sanitize(htmlResults[i]),
+                            SectionFiles = orderedSectionsForTranslate[i].SectionFiles,
+                        });
+                    }
+                    autoTranslatedTitle = candidateTitle;
+                    autoTranslatedSummary = candidateSummary;
+                    autoTranslatedSections = candidateSections;
+                }
+                // else: empty title after translate — logged below once news.NewsId is known, same as
+                // the original "Auto-translate returned an empty title" message.
+            }
+            catch (Exception ex)
+            {
+                autoTranslateException = ex;
+            }
+        }
+
         await using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
         try
         {
@@ -228,7 +289,7 @@ public sealed class CreateNewsCommandHandler
             // Otherwise the backend translates the Vietnamese content once, right now, so a post
             // is never left English-less just because the EN panel was never opened (same "auto-
             // translate exactly once at save time" rule FAQ/Partner follow).
-            if (request.EnglishContentSections is { Count: > 0 })
+            if (hasEnglishInput)
             {
                 var sanitizedEnglishTitle = _sanitizer.Sanitize((request.EnglishTitle ?? string.Empty).Trim());
                 var sanitizedEnglishSummary = _sanitizer.Sanitize((request.EnglishSummary ?? string.Empty).Trim());
@@ -238,60 +299,28 @@ public sealed class CreateNewsCommandHandler
 
                 await CreateTranslationAsync(
                     news.NewsId, "en", sanitizedEnglishTitle, sanitizedEnglishSummary,
-                    request.EnglishContentSections, now, cancellationToken);
+                    request.EnglishContentSections!, now, cancellationToken);
             }
-            else
+            else if (autoTranslateException is not null)
             {
                 // Best-effort only: a translation-provider hiccup (quota, HTTP 400, config) must
                 // never block creating the post itself — it is simply saved Vietnamese-only, same
-                // rule as FAQ/Partner.
-                try
-                {
-                    var orderedSections = request.ContentSections.OrderBy(s => s.SectionOrder).ToList();
-
-                    var plainInputs = new List<string> { sanitizedTitle, sanitizedSummary };
-                    plainInputs.AddRange(orderedSections.Select(s => string.IsNullOrWhiteSpace(s.SectionTitle) ? " " : s.SectionTitle));
-                    var htmlInputs = orderedSections.Select(s => s.SectionBodyHtml).ToList();
-
-                    var plainResults = await _translator.TranslateTextAsync(
-                        plainInputs, NewsConstants.Languages.Default, "en", cancellationToken);
-                    var htmlResults = await _translator.TranslateHtmlAsync(
-                        htmlInputs, NewsConstants.Languages.Default, "en", cancellationToken);
-
-                    var translatedTitle = _sanitizer.Sanitize(plainResults[0]).Trim();
-                    var translatedSummary = _sanitizer.Sanitize(plainResults[1]).Trim();
-
-                    var translatedSections = new List<CreateNewsContentSectionDto>(orderedSections.Count);
-                    for (var i = 0; i < orderedSections.Count; i++)
-                    {
-                        translatedSections.Add(new CreateNewsContentSectionDto
-                        {
-                            SectionOrder = orderedSections[i].SectionOrder,
-                            SectionTitle = _sanitizer.Sanitize(plainResults[2 + i]).Trim(),
-                            SectionBodyHtml = _sanitizer.Sanitize(htmlResults[i]),
-                            SectionFiles = orderedSections[i].SectionFiles,
-                        });
-                    }
-
-                    if (!string.IsNullOrWhiteSpace(translatedTitle))
-                    {
-                        await CreateTranslationAsync(
-                            news.NewsId, "en", translatedTitle, translatedSummary,
-                            translatedSections, now, cancellationToken);
-                    }
-                    else
-                    {
-                        _logger.LogWarning(
-                            "Auto-translate returned an empty title for news {NewsId}; post was created without an English translation.",
-                            news.NewsId);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex,
-                        "Auto-translate to English failed for news {NewsId}; post was created Vietnamese-only for now.",
-                        news.NewsId);
-                }
+                // rule as FAQ/Partner. The HTTP call itself already ran before this transaction opened.
+                _logger.LogWarning(autoTranslateException,
+                    "Auto-translate to English failed for news {NewsId}; post was created Vietnamese-only for now.",
+                    news.NewsId);
+            }
+            else if (autoTranslatedTitle is not null)
+            {
+                await CreateTranslationAsync(
+                    news.NewsId, "en", autoTranslatedTitle, autoTranslatedSummary!,
+                    autoTranslatedSections!, now, cancellationToken);
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "Auto-translate returned an empty title for news {NewsId}; post was created without an English translation.",
+                    news.NewsId);
             }
 
             // Step 13: Notify Staff Leaders of the same campus

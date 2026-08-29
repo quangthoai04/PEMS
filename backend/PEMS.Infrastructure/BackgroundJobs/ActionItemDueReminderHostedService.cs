@@ -17,10 +17,11 @@ namespace PEMS.Infrastructure.BackgroundJobs;
 /// <summary>
 /// Dispatches the once-only "đến hạn" reminder for meeting-minutes action items
 /// (minute_action_items). On each tick it picks rows whose due_date has passed, still have an
-/// assignee, are not DONE/CANCELLED, and have never been reminded (due_reminder_sent_at IS NULL) —
-/// sends an in-app notification + email to the assignee, then stamps due_reminder_sent_at so the
-/// same item is never reminded twice. A single failing item never aborts the rest of the batch.
-/// Mirrors <see cref="VisitReminderDispatchHostedService"/>.
+/// assignee, are not DONE/CANCELLED, and have never been reminded (due_reminder_sent_at IS NULL),
+/// claims each one with a conditional UPDATE before doing anything else, then sends an in-app
+/// notification + email to the assignee. A single failing item never aborts the rest of the batch, and
+/// (unlike the at-most-once policy in <see cref="PEMS.Application.Delegations.Reminders.VisitReminderDispatchService"/>)
+/// a failed dispatch releases its claim so a later tick retries it.
 /// </summary>
 public sealed class ActionItemDueReminderHostedService : BackgroundService
 {
@@ -60,7 +61,10 @@ public sealed class ActionItemDueReminderHostedService : BackgroundService
         }
     }
 
-    private async Task DispatchDueRemindersAsync(CancellationToken ct)
+    /// <summary>Internal (not private) so the claim-before-send regression tests can drive one tick
+    /// directly, same as PEMS.Infrastructure's other InternalsVisibleTo("PEMS.IntegrationTests") seams —
+    /// see this project's own .csproj for the existing precedent.</summary>
+    internal async Task DispatchDueRemindersAsync(CancellationToken ct)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<IApplicationDbContext>();
@@ -83,9 +87,9 @@ public sealed class ActionItemDueReminderHostedService : BackgroundService
         if (due.Count == 0) return;
 
         // Batch: everything DispatchOneAsync needs to resolve per item, fetched once for the whole
-        // `due` batch instead of once per item. Same filters/joins as before (see the 4 lookups below);
-        // per-item write side (DueReminderSentAt, SaveChangesAsync, try/catch) is UNCHANGED — still runs
-        // exactly once per item, in order, so retry semantics are untouched.
+        // `due` batch instead of once per item (same filters/joins as before, see the 4 lookups below).
+        // The per-item write side (claim, dispatch, try/catch) still runs exactly once per item, in
+        // order — see the loop below for its claim-before-send discipline (DB-TXN-003).
         var minutesIds = due.Select(a => a.MinutesId).Distinct().ToList();
         var minutesById = await db.Minutes.AsNoTracking()
             .Where(m => minutesIds.Contains(m.MinutesId))
@@ -108,18 +112,39 @@ public sealed class ActionItemDueReminderHostedService : BackgroundService
 
         foreach (var item in due)
         {
+            // Claim before doing anything (DB-TXN-003): two overlapping instances of this job — or an
+            // overlapping tick of this same one — used to both see the row as unclaimed for the whole
+            // dispatch, since due_reminder_sent_at was only stamped AFTER the email attempt succeeded.
+            // A single conditional UPDATE re-checks the SAME conditions the SELECT above used, evaluated
+            // against the row's CURRENT state rather than the in-memory copy the SELECT returned a
+            // moment earlier — the same discipline VisitReminderDispatchService.ClaimAsync documents —
+            // so only one caller's UPDATE matches and the other moves on.
+            var claimed = await db.MinuteActionItems
+                .Where(a => a.ActionItemId == item.ActionItemId
+                            && a.DueDate != null && a.DueDate <= now
+                            && a.DueReminderSentAt == null
+                            && a.Status != "DONE" && a.Status != "CANCELLED"
+                            && a.AssignedToUserId != null)
+                .ExecuteUpdateAsync(s => s.SetProperty(a => a.DueReminderSentAt, now), ct);
+            if (claimed != 1) continue;
+
             try
             {
                 await DispatchOneAsync(
                     db, email, notificationService, item, now,
                     minutesById, instancesById, assigneesById, delegationNamesByInstance, ct);
-                item.DueReminderSentAt = now;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to dispatch due-reminder for action item {ActionItemId}.", item.ActionItemId);
+                // Unlike VisitReminderDispatchService's at-most-once policy, this job's own retry
+                // contract predates this fix (see DispatchOneAsync's remarks: "safe to retry" via the
+                // notification's DedupeKey) and is preserved as-is — undo the claim so a later tick
+                // tries again, exactly as a failure left the row before this change.
+                await db.MinuteActionItems
+                    .Where(a => a.ActionItemId == item.ActionItemId)
+                    .ExecuteUpdateAsync(s => s.SetProperty(a => a.DueReminderSentAt, (DateTime?)null), ct);
             }
-            await db.SaveChangesAsync(ct);
         }
     }
 

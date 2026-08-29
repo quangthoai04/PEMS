@@ -695,6 +695,18 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         // ── Visit Expense Statistics (v11) ────────────────────────────────
         modelBuilder.Entity<VisitExpenseReport>(b =>
         {
+            // DB-TXN-009: RowVersion was a plain int, incremented in memory (report.RowVersion++) but
+            // never part of the generated UPDATE's WHERE clause, so SaveExpenseReportCommandHandler's
+            // manual "report.RowVersion != request.RowVersion" check only caught a writer arriving AFTER
+            // a prior save had already committed - two overlapping saves that both loaded the same
+            // starting RowVersion would both pass that check and both succeed, the second silently
+            // overwriting the first (lost update), and the handler's own
+            // catch (DbUpdateConcurrencyException) could never fire. IsConcurrencyToken() makes EF add
+            // AND row_version = @original to the UPDATE, so a losing concurrent save now affects 0 rows
+            // and throws that exception for real - which the handler already converts into the same
+            // ConflictException it always intended to raise for this case.
+            b.Property(r => r.RowVersion).IsConcurrencyToken();
+
             b.HasOne(r => r.VisitInstance).WithMany()
                 .HasForeignKey(r => r.VisitInstanceId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(r => r.LogisticsItem).WithMany()
@@ -721,6 +733,10 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
         modelBuilder.Entity<VisitExpenseItem>(b =>
         {
+            // DB-TXN-009: same fix as VisitExpenseReport.RowVersion above - items are saved in the same
+            // SaveChangesAsync call and get the same decorative RowVersion++ with nothing enforcing it.
+            b.Property(i => i.RowVersion).IsConcurrencyToken();
+
             b.HasOne(i => i.ExpenseReport).WithMany(r => r.Items)
                 .HasForeignKey(i => i.ExpenseReportId).OnDelete(DeleteBehavior.Cascade);
             b.HasOne<User>().WithMany()

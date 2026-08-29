@@ -89,18 +89,31 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
 
         if (!passwordOk)
         {
-            user.FailedLoginCount += 1;
-            if (user.FailedLoginCount >= _maxFailedAttempts)
-            {
-                user.LockedUntil = now.AddMinutes(_lockoutMinutes);
-                await _db.SaveChangesAsync(cancellationToken);
+            // Atomic increment (DB-TXN-002): two concurrent bad-password attempts on the same account
+            // used to both read the same pre-increment count in memory and each write back count+1, so
+            // one attempt was silently lost and the lockout threshold under-counted real attempts. This
+            // single UPDATE increments and — in the same statement, off the post-increment value — sets
+            // the lockout deadline when the threshold is reached, so there is no read-then-write gap for
+            // a second connection to land in.
+            var lockUntil = now.AddMinutes(_lockoutMinutes);
+            await _db.Users
+                .Where(u => u.UserId == user.UserId)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(u => u.FailedLoginCount, u => u.FailedLoginCount + 1)
+                    .SetProperty(u => u.LockedUntil,
+                        u => u.FailedLoginCount + 1 >= _maxFailedAttempts ? lockUntil : u.LockedUntil),
+                    cancellationToken);
 
+            var failedLoginCount = await _db.Users.AsNoTracking()
+                .Where(u => u.UserId == user.UserId)
+                .Select(u => u.FailedLoginCount)
+                .FirstAsync(cancellationToken);
+
+            if (failedLoginCount >= _maxFailedAttempts)
                 await FailAsync(user, email, portal, user.PrimaryCampusId, LoginLogStatuses.Blocked, "lockout_triggered", SecurityEventFailureReasonCodes.AccountDisabled,
                     request, AuthErrorCodes.AccountLocked,
                     "Your account is temporarily locked. Please try again later.", 403, cancellationToken);
-            }
 
-            await _db.SaveChangesAsync(cancellationToken);
             await FailAsync(user, email, portal, user.PrimaryCampusId, LoginLogStatuses.Failed, "bad_password", null,
                 request, AuthErrorCodes.InvalidCredentials, GenericCredentialError, 401, cancellationToken);
         }

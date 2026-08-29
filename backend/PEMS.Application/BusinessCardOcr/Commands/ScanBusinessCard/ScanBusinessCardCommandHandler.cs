@@ -95,26 +95,12 @@ public sealed class ScanBusinessCardCommandHandler
         var now = _clock.VietnamNow;
         var period = now.ToString("yyyyMM");
 
-        // 6) Monthly quota → HTTP 429 without calling the cloud.
-        var quota = await _db.ApiUsageQuotas.FirstOrDefaultAsync(
-            q => q.ApiConfigId == config.ApiConfigId && q.CampusScopeKey == "GLOBAL" && q.PeriodYyyymm == period,
-            cancellationToken);
+        // 6) Monthly quota → HTTP 429 without calling the cloud. DB-TXN-008: claimed atomically here
+        // (ApiUsageQuotaGuard) — this claim itself IS the "billable whether the call below succeeds or
+        // fails" charge; nothing after this point touches quota.UsedCount again.
+        var quota = await ApiUsageQuotaGuard.TryClaimAsync(
+            _db, config.ApiConfigId, "GLOBAL", period, (int)(config.MonthlyQuota ?? 1000), userId, now, cancellationToken);
         if (quota is null)
-        {
-            quota = new ApiUsageQuota
-            {
-                ApiConfigId = config.ApiConfigId,
-                CampusScopeKey = "GLOBAL",
-                PeriodYyyymm = period,
-                MonthlyLimit = (int)(config.MonthlyQuota ?? 1000),
-                UsedCount = 0,
-                CreatedAt = now,
-                CreatedBy = userId,
-            };
-            _db.ApiUsageQuotas.Add(quota);
-            await _db.SaveChangesAsync(cancellationToken);
-        }
-        if (quota.UsedCount >= quota.MonthlyLimit)
             throw new AuthBusinessException(BusinessCardOcrErrorCodes.QuotaExceeded,
                 "Đã hết hạn mức quét danh thiếp trong tháng.", 429);
 
@@ -284,10 +270,7 @@ public sealed class ScanBusinessCardCommandHandler
             CreatedAt = processedAt,
         });
 
-        // 16) Count the cloud call against the monthly quota (success or failure — both billable attempts).
-        quota.UsedCount += 1;
-        quota.LastUsedAt = processedAt;
-        quota.UpdatedAt = processedAt;
+        // 16) Quota already claimed atomically up front (DB-TXN-008) — see step 6.
 
         await _db.SaveChangesAsync(cancellationToken);
 

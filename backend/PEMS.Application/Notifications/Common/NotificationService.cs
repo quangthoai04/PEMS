@@ -101,10 +101,60 @@ public class NotificationService : INotificationService
             });
         }
 
-        if (notifications.Count > 0)
+        if (notifications.Count == 0) return;
+
+        _context.Notifications.AddRange(notifications);
+        try
         {
-            _context.Notifications.AddRange(notifications);
             await _context.SaveChangesAsync(cancellationToken);
+        }
+        // DB-TXN-010: the proactive check above (existingDedupeKeys) is a plain read with nothing
+        // holding the gap shut — a second caller racing the exact same dedupe key (e.g. two overlapping
+        // reminder-job ticks, or two requests hitting the same idempotent notify path) can pass that
+        // check too and then lose the unique-constraint race at SaveChangesAsync. That loss must land
+        // as a graceful no-op, not an unhandled exception bubbling out of what is usually a side effect
+        // inside a larger caller's own business transaction (e.g. approving a campus instance). But this
+        // is a BATCH insert of possibly several unrelated notifications, so a bare
+        // catch (DbUpdateException) would just as happily swallow a real problem — an FK violation on a
+        // bad ActorUserId/VisitRequestId, a truncation error, anything. Only notifications with a
+        // DedupeKey can possibly hit uq_notifications_recipient_dedupe (MySQL never treats two NULLs as
+        // equal in a unique index), so a batch with none can't be this race at all. For a batch that
+        // does, the exact cause is confirmed by re-reading current DB state rather than parsing the
+        // driver's exception type/message: whatever pair now already exists WAS the collision;
+        // whatever doesn't still needs to be saved and was never at fault.
+        catch (DbUpdateException) when (notifications.Any(n => n.DedupeKey != null))
+        {
+            foreach (var n in notifications)
+                _context.Notifications.Remove(n); // Added-but-unsaved entity -> detaches, no DELETE issued.
+
+            var recheckCandidates = notifications
+                .Where(n => n.DedupeKey != null)
+                .Select(n => n.RecipientUserId)
+                .Distinct()
+                .ToList();
+            var stillTaken = (await _context.Notifications
+                    .Where(n => n.DedupeKey != null && recheckCandidates.Contains(n.RecipientUserId))
+                    .Select(n => new { n.RecipientUserId, n.DedupeKey })
+                    .ToListAsync(cancellationToken))
+                .Select(x => (x.RecipientUserId, x.DedupeKey!))
+                .ToHashSet();
+
+            var survivors = notifications
+                .Where(n => n.DedupeKey == null || !stillTaken.Contains((n.RecipientUserId, n.DedupeKey)))
+                .ToList();
+
+            // Nothing in the batch was actually a dedupe collision on re-check (every pair we tried to
+            // insert is still free) -> the failure was something else entirely. Don't hide it.
+            if (survivors.Count == notifications.Count)
+                throw;
+
+            if (survivors.Count > 0)
+            {
+                _context.Notifications.AddRange(survivors);
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+            // else: every notification in the batch turned out to be a duplicate someone else just
+            // committed - the graceful outcome this whole path exists for.
         }
     }
 }

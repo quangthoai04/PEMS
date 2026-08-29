@@ -475,6 +475,77 @@ public sealed class AccountRoleChangeConcurrencyTests : IClassFixture<PemsWebApp
         await AssertTargetUnchangedAsync(RoleCodes.Department, UserSubRoles.Leader);
     }
 
+    // ── DB-TXN-004: the department-head freshness check must not read a stale snapshot ─────────
+
+    /// <summary>
+    /// The race <see cref="UpdateAccountRoleCommandHandler"/>'s own comment on
+    /// <c>HandOverDepartmentHeadAsync</c> says it refuses: "if somebody else moved the seat first, the
+    /// caller is acting on a stale screen and must reload rather than have us overwrite their handover."
+    /// That check reads <c>department.HeadUserId</c> AFTER taking the department lock — but this handler
+    /// ALSO reads the target user earlier, under the SAME transaction, BEFORE that lock. Under
+    /// REPEATABLE READ (the provider default) that earlier read fixes the transaction's snapshot, so the
+    /// later "read after the lock" is not actually fresh: a concurrent head change committed while this
+    /// transaction was blocked on the department lock would be invisible to the check, and the handover
+    /// would silently overwrite it instead of refusing. BeginSerializedTransactionAsync (READ COMMITTED)
+    /// is the fix; this proves the check is fresh with it in place.
+    /// </summary>
+    [Fact]
+    public async Task ConcurrentDepartmentHeadChange_DuringHandover_IsDetectedNotOverwritten()
+    {
+        await MakeTargetDepartmentLeaderAndHeadAsync();
+
+        var mutatorHoldsTheLock = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // Transaction A: an unrelated admin action that reassigns the department head to a THIRD person
+        // (_leaderUserId - already a real Staff Leader in the fixture, same raw-SQL shape
+        // MakeTargetDepartmentLeaderAndHeadAsync/DepartmentHead_MustBeReassignedBeforeTheirRoleCanChange
+        // already use to seat a head) while B is still mid-flight.
+        var concurrentHeadChange = Task.Run(async () =>
+        {
+            using var scope = _factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var locks = new MySqlUserMutationLockService(db);
+
+            await using var tx = await db.Database.BeginTransactionAsync();
+            await locks.LockDepartmentsAsync(new[] { _generalDepartmentId }, CancellationToken.None);
+            mutatorHoldsTheLock.SetResult();
+
+            await Task.Delay(TimeSpan.FromMilliseconds(500));
+
+            await db.Database.ExecuteSqlRawAsync(
+                "UPDATE departments SET head_user_id = {0} WHERE department_id = {1}",
+                _leaderUserId, _generalDepartmentId);
+
+            await tx.CommitAsync();
+        });
+
+        // Transaction B: the real handler. Started only once A already holds the department lock, so
+        // B's own LockDepartmentsAsync call (reached after its earlier, uncontended user lock + read)
+        // is guaranteed to genuinely block on it.
+        await mutatorHoldsTheLock.Task.WaitAsync(LockWait);
+
+        using var roleScope = _factory.Services.CreateScope();
+        var handler = CreateHandler(roleScope.ServiceProvider.GetRequiredService<ApplicationDbContext>());
+        var command = ToStudentCommand();
+        command.ReplacementDepartmentHeadUserId = _successorUserId;
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(
+            () => handler.Handle(command, CancellationToken.None));
+        Assert.Equal(AccountErrorCodes.InvalidDepartmentHeadReplacement, ex.ErrorCode);
+
+        await concurrentHeadChange.WaitAsync(LockWait);
+
+        // The concurrent change survives: neither overwritten by the handover nor rolled back with it.
+        using var verifyScope = _factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var head = await verifyDb.Departments.AsNoTracking()
+            .Where(d => d.DepartmentId == _generalDepartmentId).Select(d => d.HeadUserId).FirstAsync();
+        Assert.Equal(_leaderUserId, head);
+
+        // And the refused role change touched nothing.
+        await AssertTargetUnchangedAsync(RoleCodes.Department, UserSubRoles.Leader);
+    }
+
     // ── §23.6 Rollback leaves nothing behind ──────────────────────────────────
 
     [Fact]

@@ -72,6 +72,74 @@ public sealed class UpdateFAQCommandHandler : IRequestHandler<UpdateFAQCommand, 
         var sourceHash = ComputeHash(sanitizedQuestion, sanitizedAnswer);
         var englishChanged = false;
 
+        // ── DB-TXN-007: read/prepare, then the external call, then the transactional mutation. ──
+        // Everything below was previously read AND the translator called from inside the open write
+        // transaction, holding it (and whatever locks it implicitly took) for the duration of an HTTP
+        // round trip. Nothing here needs the transaction's atomicity to be correct: this handler takes
+        // no row lock (no IUserMutationLockService involved) and the entities loaded below are the same
+        // EF-tracked instances SaveChangesAsync will use once the transaction opens further down — EF's
+        // change tracker is independent of when the transaction starts, so moving the read earlier
+        // changes nothing about what gets written or when. The translator call keeps its exact existing
+        // failure contract: a provider hiccup is caught, logged, and the row stays Vietnamese-only — that
+        // was already decided outside the transaction's rollback path (the catch never rolled back), so
+        // moving it fully outside changes nothing about that behavior either.
+        var translations = await _dbContext.FaqTranslations
+            .Where(t => t.FaqId == request.FaqId)
+            .ToListAsync(cancellationToken);
+
+        var viTranslation = translations.FirstOrDefault(t => t.LanguageCode == "vi");
+
+        var providedEnglishQuestion = _sanitizer.Sanitize(request.EnglishQuestion ?? string.Empty).Trim();
+        var providedEnglishAnswer = _sanitizer.Sanitize(request.EnglishAnswer ?? string.Empty).Trim();
+        var englishProvided = !string.IsNullOrWhiteSpace(providedEnglishQuestion)
+                            && !string.IsNullOrWhiteSpace(providedEnglishAnswer);
+
+        var enTranslation = translations.FirstOrDefault(t => t.LanguageCode == "en");
+
+        // Null means "translation unavailable this save" (auto-translate attempt failed) — the
+        // EN row is then left as it was (or absent); public reads already fall back requested
+        // language → vi, and the admin can translate later via the EN panel.
+        string? englishQuestionOut;
+        string? englishAnswerOut;
+        string? autoTranslatedQuestion = null;
+        string? autoTranslatedAnswer = null;
+
+        if (englishProvided)
+        {
+            englishQuestionOut = providedEnglishQuestion;
+            englishAnswerOut = providedEnglishAnswer;
+        }
+        else if (enTranslation is null)
+        {
+            // EN panel was never opened for this FAQ — best-effort auto-translate once so the
+            // FAQ isn't left English-less. A translation-provider hiccup (quota, HTTP 400,
+            // config) must never block the update itself, so failures are logged and skipped.
+            try
+            {
+                var translated = await _translator.TranslateTextAsync(
+                    new List<string> { sanitizedQuestion, sanitizedAnswer },
+                    NewsConstants.Languages.Default, "en", cancellationToken);
+                autoTranslatedQuestion = _sanitizer.Sanitize(translated[0]).Trim();
+                autoTranslatedAnswer = _sanitizer.Sanitize(translated[1]).Trim();
+                englishQuestionOut = autoTranslatedQuestion;
+                englishAnswerOut = autoTranslatedAnswer;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Auto-translate to English failed for FAQ {FaqId}; leaving it Vietnamese-only for now.",
+                    faq.FaqId);
+                englishQuestionOut = null;
+                englishAnswerOut = null;
+            }
+        }
+        else
+        {
+            // EN already exists and the panel wasn't opened this time — leave it untouched.
+            englishQuestionOut = enTranslation.Question;
+            englishAnswerOut = enTranslation.Answer;
+        }
+
         await using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
         try
         {
@@ -85,11 +153,6 @@ public sealed class UpdateFAQCommandHandler : IRequestHandler<UpdateFAQCommand, 
                 await _dbContext.SaveChangesAsync(cancellationToken);
             }
 
-            var translations = await _dbContext.FaqTranslations
-                .Where(t => t.FaqId == request.FaqId)
-                .ToListAsync(cancellationToken);
-
-            var viTranslation = translations.FirstOrDefault(t => t.LanguageCode == "vi");
             if (viTranslation is null)
             {
                 _dbContext.FaqTranslations.Add(new FaqTranslation
@@ -115,19 +178,6 @@ public sealed class UpdateFAQCommandHandler : IRequestHandler<UpdateFAQCommand, 
                 viTranslation.UpdatedAt = now;
                 viTranslation.UpdatedBy = _currentUser.UserId;
             }
-
-            var providedEnglishQuestion = _sanitizer.Sanitize(request.EnglishQuestion ?? string.Empty).Trim();
-            var providedEnglishAnswer = _sanitizer.Sanitize(request.EnglishAnswer ?? string.Empty).Trim();
-            var englishProvided = !string.IsNullOrWhiteSpace(providedEnglishQuestion)
-                                && !string.IsNullOrWhiteSpace(providedEnglishAnswer);
-
-            var enTranslation = translations.FirstOrDefault(t => t.LanguageCode == "en");
-
-            // Null means "translation unavailable this save" (auto-translate attempt failed) — the
-            // EN row is then left as it was (or absent); public reads already fall back requested
-            // language → vi, and the admin can translate later via the EN panel.
-            string? englishQuestionOut;
-            string? englishAnswerOut;
 
             if (englishProvided)
             {
@@ -161,52 +211,26 @@ public sealed class UpdateFAQCommandHandler : IRequestHandler<UpdateFAQCommand, 
                     enTranslation.UpdatedAt = now;
                     enTranslation.UpdatedBy = _currentUser.UserId;
                 }
-                englishQuestionOut = providedEnglishQuestion;
-                englishAnswerOut = providedEnglishAnswer;
             }
-            else if (enTranslation is null)
+            else if (enTranslation is null && autoTranslatedQuestion is not null && autoTranslatedAnswer is not null)
             {
-                // EN panel was never opened for this FAQ — best-effort auto-translate once so the
-                // FAQ isn't left English-less. A translation-provider hiccup (quota, HTTP 400,
-                // config) must never block the update itself, so failures are logged and skipped.
-                try
+                englishChanged = true;
+                _dbContext.FaqTranslations.Add(new FaqTranslation
                 {
-                    var translated = await _translator.TranslateTextAsync(
-                        new List<string> { sanitizedQuestion, sanitizedAnswer },
-                        NewsConstants.Languages.Default, "en", cancellationToken);
-                    englishQuestionOut = _sanitizer.Sanitize(translated[0]).Trim();
-                    englishAnswerOut = _sanitizer.Sanitize(translated[1]).Trim();
-                    englishChanged = true;
-
-                    _dbContext.FaqTranslations.Add(new FaqTranslation
-                    {
-                        FaqId = faq.FaqId,
-                        LanguageCode = "en",
-                        Question = englishQuestionOut,
-                        Answer = englishAnswerOut,
-                        TranslationSource = "AUTO",
-                        TranslationStatus = "READY",
-                        SourceHash = sourceHash,
-                        TranslatedAt = now,
-                        CreatedAt = now,
-                        CreatedBy = _currentUser.UserId,
-                    });
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex,
-                        "Auto-translate to English failed for FAQ {FaqId}; leaving it Vietnamese-only for now.",
-                        faq.FaqId);
-                    englishQuestionOut = null;
-                    englishAnswerOut = null;
-                }
+                    FaqId = faq.FaqId,
+                    LanguageCode = "en",
+                    Question = autoTranslatedQuestion,
+                    Answer = autoTranslatedAnswer,
+                    TranslationSource = "AUTO",
+                    TranslationStatus = "READY",
+                    SourceHash = sourceHash,
+                    TranslatedAt = now,
+                    CreatedAt = now,
+                    CreatedBy = _currentUser.UserId,
+                });
             }
-            else
-            {
-                // EN already exists and the panel wasn't opened this time — leave it untouched.
-                englishQuestionOut = enTranslation.Question;
-                englishAnswerOut = enTranslation.Answer;
-            }
+            // else: auto-translate failed above (autoTranslatedQuestion/Answer stayed null), or EN
+            // already existed and the panel wasn't opened — nothing to write for EN either way.
 
             await _dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);

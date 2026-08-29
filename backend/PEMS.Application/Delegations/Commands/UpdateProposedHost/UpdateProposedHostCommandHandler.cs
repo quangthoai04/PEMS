@@ -142,10 +142,16 @@ public sealed class UpdateProposedHostCommandHandler
                     VisitRequestErrorCodes.InvalidHostCandidate);
         }
 
+        // Lock before trusting eligibility, same protocol as approve/create: a concurrent role change
+        // and a host decision must not both believe they won. The lock has to be held all the way to
+        // the commit below — taken outside an explicit transaction it would release the instant the
+        // FOR UPDATE statement completed under autocommit, protecting nothing (DB-TXN-001). Opened
+        // unconditionally so the clear-proposal path (no lock taken) still commits its own write
+        // atomically, same as every other lock-protected flow in this module.
+        await using var tx = await _db.BeginSerializedTransactionAsync(cancellationToken);
+
         if (proposedId is not null)
         {
-            // Lock before trusting eligibility, same protocol as approve/create: a concurrent role
-            // change and a host decision must not both believe they won.
             await _lockService.LockUsersAsync(new[] { proposedId.Value }, cancellationToken);
 
             var (eligibility, host) = await VisitHostEligibility.EvaluateAsync(
@@ -199,6 +205,7 @@ public sealed class UpdateProposedHostCommandHandler
         _db.AuditLogs.Add(audit);
 
         await _db.SaveChangesAsync(cancellationToken);
+        await tx.CommitAsync(cancellationToken);
 
         return new UpdateProposedHostResponse(
             visit.VisitRequestId, instance.VisitInstanceId, mode, proposedId, proposedName,

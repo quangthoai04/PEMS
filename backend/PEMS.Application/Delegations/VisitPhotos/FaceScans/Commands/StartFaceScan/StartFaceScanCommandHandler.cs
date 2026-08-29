@@ -86,25 +86,12 @@ public sealed class StartFaceScanCommandHandler : IRequestHandler<StartFaceScanC
 
         var now = _clock.VietnamNow;
         var period = now.ToString("yyyyMM");
-        var quota = await _db.ApiUsageQuotas.FirstOrDefaultAsync(
-            q => q.ApiConfigId == config.ApiConfigId && q.CampusScopeKey == "GLOBAL" && q.PeriodYyyymm == period,
-            cancellationToken);
+        // DB-TXN-008: claimed atomically up front — see ApiUsageQuotaGuard. The claim itself IS the
+        // "billable whether the call below succeeds or fails" charge; nothing after this point touches
+        // quota.UsedCount again.
+        var quota = await ApiUsageQuotaGuard.TryClaimAsync(
+            _db, config.ApiConfigId, "GLOBAL", period, (int)(config.MonthlyQuota ?? 1000), userId, now, cancellationToken);
         if (quota is null)
-        {
-            quota = new ApiUsageQuota
-            {
-                ApiConfigId = config.ApiConfigId,
-                CampusScopeKey = "GLOBAL",
-                PeriodYyyymm = period,
-                MonthlyLimit = (int)(config.MonthlyQuota ?? 1000),
-                UsedCount = 0,
-                CreatedAt = now,
-                CreatedBy = userId,
-            };
-            _db.ApiUsageQuotas.Add(quota);
-            await _db.SaveChangesAsync(cancellationToken);
-        }
-        if (quota.UsedCount >= quota.MonthlyLimit)
             throw new AuthBusinessException(FaceScanErrorCodes.QuotaExceeded,
                 "Đã hết hạn mức quét khuôn mặt trong tháng.", 429);
 
@@ -257,10 +244,7 @@ public sealed class StartFaceScanCommandHandler : IRequestHandler<StartFaceScanC
             CreatedAt = processedAt,
         });
 
-        // Count the cloud call against the monthly quota (success or failure — both billable attempts).
-        quota.UsedCount += 1;
-        quota.LastUsedAt = processedAt;
-        quota.UpdatedAt = processedAt;
+        // Quota already claimed atomically up front (DB-TXN-008) — see ApiUsageQuotaGuard.TryClaimAsync.
 
         _db.AuditLogs.Add(new AuditLog
         {

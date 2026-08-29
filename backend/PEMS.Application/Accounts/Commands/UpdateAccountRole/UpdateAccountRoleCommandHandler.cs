@@ -81,7 +81,17 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
         if (actorId is not null && request.UserId == actorId.Value)
             throw new ForbiddenException("Bạn không thể tự thay đổi vai trò của chính mình.");
 
-        await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
+        // DB-TXN-004: this handler locks the target user up front, but — unlike every sibling in this
+        // module — takes a SECOND lock later (departments, below) after already reading the target
+        // under REPEATABLE READ. That earlier read fixes the transaction's snapshot, so the later
+        // lock's own "read fresh, post-lock" reads (department.HeadUserId in HandOverDepartmentHeadAsync
+        // in particular — see its own remarks) would silently see pre-lock data instead: a concurrent
+        // department-head change could be overwritten instead of detected. Confirmed live against real
+        // MySQL (two sessions, cross-table read) before this fix and cleared after it.
+        // BeginSerializedTransactionAsync (READ COMMITTED) is what the other 23 lock-protected flows in
+        // this codebase already use for exactly this reason; matching them here closes the gap without
+        // changing anything about the lock order, the checks themselves, or their outcomes.
+        await using var transaction = await _db.BeginSerializedTransactionAsync(cancellationToken);
 
         // ── Lock FIRST, read after. A concurrent assign-host / invite-participant / assign-logistics
         //    transaction takes the same lock, so the two serialize and neither can commit against a
