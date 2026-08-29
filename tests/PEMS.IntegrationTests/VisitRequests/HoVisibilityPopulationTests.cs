@@ -332,6 +332,60 @@ public sealed class HoVisibilityPopulationTests
         finally { await CleanupAsync(requestId); }
     }
 
+    /// <summary>
+    /// DB-PROJ-001: <c>QueryRequestLevelAsync</c> (HO's branch, exercised by <see cref="ListAsync"/>
+    /// above) used to <c>Include(vr =&gt; vr.Partner)</c> - eager-loading the whole Partner entity - to
+    /// read one field, <c>Name</c>. The fix replaced it with the same lightweight
+    /// <c>PartnerId -&gt; Name</c> lookup <c>QueryInstanceLevelAsync</c> already used elsewhere in this
+    /// handler. This proves the request-level row still resolves the linked Partner's name correctly
+    /// through the real MySQL query, not just that the projection code compiles.
+    /// </summary>
+    [Fact]
+    public async Task Ho_RequestLinkedToPartner_ResolvesPartnerNameFromLookup()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        ulong partnerId = 0;
+        try
+        {
+            requestId = await CreateAsync(Registrant, RoleCodes.Visitor, Campus("HN", Registrant));
+            var code = await RequestCodeAsync(requestId);
+            var hn = (await StateAsync(requestId))["HN"];
+
+            using (var db = NewContext())
+            {
+                var partnerName = "IT-TXN-PROJ001 Partner " + Guid.NewGuid().ToString("N")[..8];
+                await db.Database.ExecuteSqlRawAsync(
+                    "INSERT INTO partners (owner_campus_id, name) VALUES ({0}, {1})",
+                    hn.CampusId, partnerName);
+                partnerId = await db.Partners.AsNoTracking()
+                    .Where(p => p.Name == partnerName).Select(p => p.PartnerId).SingleAsync();
+                await db.Database.ExecuteSqlRawAsync(
+                    "UPDATE visit_requests SET partner_id = {1} WHERE visit_request_id = {0}",
+                    requestId, partnerId);
+            }
+
+            var ho = new FakeUser(999_108, RoleCodes.Ho);
+            var item = (await ListAsync(ho, code)).Items.Single(r => r.VisitRequestId == requestId);
+
+            using (var db = NewContext())
+            {
+                var expectedName = await db.Partners.AsNoTracking()
+                    .Where(p => p.PartnerId == partnerId).Select(p => p.Name).SingleAsync();
+                Assert.Equal(expectedName, item.PartnerName);
+            }
+        }
+        finally
+        {
+            await CleanupAsync(requestId);
+            if (partnerId != 0)
+            {
+                using var db = NewContext();
+                await db.Database.ExecuteSqlRawAsync("DELETE FROM partners WHERE partner_id = {0}", partnerId);
+            }
+        }
+    }
+
     [Fact]
     public async Task Ho_AllStatuses_IncludesMultiCampusRequest()
     {

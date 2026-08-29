@@ -148,6 +148,31 @@ public sealed class VisitReminderDispatchService : IVisitReminderDispatchService
             _logger?.LogWarning(
                 "Visit reminder backlog at capacity ({BatchSize}) this tick; more may still be due.", BatchSize);
 
+        if (due.Count == 0) return 0;
+
+        // DB-NQ-005: DispatchOneAsync used to re-query the instance and its campus name for every
+        // single reminder, even though this tick's whole `due` batch only ever touches a handful of
+        // distinct instances/campuses. Batched once here, read-only, entirely BEFORE the claim loop
+        // below — the claim itself (ClaimAsync) and the strict Claim -> Send order per reminder are
+        // untouched: this only replaces what used to be N per-reminder SELECTs with one query each for
+        // the instances and their campus names, then a dictionary lookup per reminder. A reminder whose
+        // instance is somehow missing from this batch (never expected, but not assumed) still falls
+        // back to DispatchOneAsync's own per-item query via the null branch below — never a crash.
+        var instanceIds = due.Select(r => r.VisitInstanceId).Distinct().ToList();
+        var instancesById = await _db.VisitRequestCampuses
+            .AsNoTracking()
+            .Include(c => c.FormDetail)
+            .Where(c => instanceIds.Contains(c.VisitInstanceId))
+            .ToDictionaryAsync(c => c.VisitInstanceId, cancellationToken);
+
+        var campusIds = instancesById.Values.Select(i => i.CampusId).Distinct().ToList();
+        var campusNamesById = campusIds.Count == 0
+            ? new Dictionary<ulong, string>()
+            : await _db.Campuses
+                .AsNoTracking()
+                .Where(c => campusIds.Contains(c.CampusId))
+                .ToDictionaryAsync(c => c.CampusId, c => c.Name, cancellationToken);
+
         var dispatched = 0;
 
         foreach (var reminder in due)
@@ -159,7 +184,13 @@ public sealed class VisitReminderDispatchService : IVisitReminderDispatchService
             ReminderDispatchOutcome outcome;
             try
             {
-                outcome = await DispatchOneAsync(reminder, cancellationToken);
+                instancesById.TryGetValue(reminder.VisitInstanceId, out var prefetchedInstance);
+                string? prefetchedCampusName = prefetchedInstance is not null
+                    && campusNamesById.TryGetValue(prefetchedInstance.CampusId, out var name)
+                    ? name
+                    : null;
+                outcome = await DispatchOneAsync(
+                    reminder, prefetchedInstance, prefetchedCampusName, cancellationToken);
             }
             catch (Exception)
             {
@@ -271,10 +302,24 @@ public sealed class VisitReminderDispatchService : IVisitReminderDispatchService
                 ct);
     }
 
-    public async Task<ReminderDispatchOutcome> DispatchOneAsync(
+    public Task<ReminderDispatchOutcome> DispatchOneAsync(
         VisitInstanceReminderSetting reminder, CancellationToken cancellationToken = default)
+        => DispatchOneAsync(reminder, prefetchedInstance: null, prefetchedCampusName: null, cancellationToken);
+
+    /// <summary>
+    /// Same behavior as the public 2-argument overload in every way — including still doing its own
+    /// per-item queries when either prefetch argument is null, exactly as before this method existed —
+    /// except that <see cref="DispatchDueAsync"/> can pass what it already batched for the whole tick
+    /// (DB-NQ-005) instead of this method re-querying the same instance/campus name it just fetched a
+    /// moment ago for a sibling reminder.
+    /// </summary>
+    private async Task<ReminderDispatchOutcome> DispatchOneAsync(
+        VisitInstanceReminderSetting reminder,
+        VisitRequestCampus? prefetchedInstance,
+        string? prefetchedCampusName,
+        CancellationToken cancellationToken)
     {
-        var instance = await _db.VisitRequestCampuses
+        var instance = prefetchedInstance ?? await _db.VisitRequestCampuses
             .AsNoTracking()
             .Include(c => c.FormDetail)
             .FirstOrDefaultAsync(c => c.VisitInstanceId == reminder.VisitInstanceId, cancellationToken)
@@ -298,7 +343,7 @@ public sealed class VisitReminderDispatchService : IVisitReminderDispatchService
         // The reminder targets ONE campus instance, so every value comes from THAT instance — never
         // from a sibling campus of the same request, which would tell people the wrong time and place.
         var delegationName = instance.FormDetail?.DelegationName ?? "FPT University";
-        var campusName = await _db.Campuses
+        var campusName = prefetchedCampusName ?? await _db.Campuses
             .Where(c => c.CampusId == instance.CampusId).Select(c => c.Name)
             .FirstOrDefaultAsync(cancellationToken) ?? "FPT University";
 

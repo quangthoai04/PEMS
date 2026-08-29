@@ -34,9 +34,18 @@ public sealed class ViewDocumentDetailQueryHandler : IRequestHandler<ViewDocumen
         if (document == null)
             throw new NotFoundException("Document", request.DocumentId);
 
-        // Check scope
-        var isStaffLeader = _currentUser.RoleCode == "STAFF" && _currentUser.SubRole == "LEADER";
-        if (isStaffLeader)
+        // Check scope. HO has global visibility; every other role this controller permits (Staff,
+        // Staff Leader) is scoped to their own campus. This used to check isStaffLeader only, so a
+        // plain Staff account had no scope check at all and could view ANY document (any campus) by
+        // id, while every write path that produces a Documents row for the same owners
+        // (VisitDocumentAccess, PartnerAccess.CanEditPartner) already scopes Staff to their own campus.
+        // Check scope. HO has global visibility; every other role this controller permits (Staff,
+        // Staff Leader) is scoped to their own campus. This used to check isStaffLeader only, so a
+        // plain Staff account had no scope check at all and could view ANY document (any campus) by
+        // id, while every write path that produces a Documents row for the same owners
+        // (VisitDocumentAccess, PartnerAccess.CanEditPartner) already scopes Staff to their own campus.
+        var isHo = _currentUser.RoleCode == "HO";
+        if (!isHo)
         {
             if (_currentUser.PrimaryCampusId == null || document.CampusId != _currentUser.PrimaryCampusId)
             {

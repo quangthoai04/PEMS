@@ -4,8 +4,10 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Documents.Queries.SearchDocuments;
+using PEMS.Application.Documents.Queries.ViewDocumentDetail;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Documents;
 using PEMS.Infrastructure.Persistence;
@@ -159,6 +161,132 @@ public sealed class DocumentSearchScopeV2Tests
                 new SearchDocumentsQuery { CampusId = CampusHn, Page = 1, PageSize = 200 }, CancellationToken.None);
             Assert.Contains(hnOnly.Items, i => i.Title == $"BáoCáoHN{tag}");
             Assert.DoesNotContain(hnOnly.Items, i => i.Title == $"BáoCáoHCM{tag}");
+        }
+        finally { await CleanupAsync(docs); }
+    }
+
+    /// <summary>
+    /// Security fix: the campus-scope check (both here and in ViewDocumentDetail) used to gate on
+    /// `RoleCode == "STAFF" && SubRole == "LEADER"` only, so a plain Staff account (no Leader subrole)
+    /// had no scope check at all — it could search every campus's documents, and even self-select a
+    /// campus via the CampusId param, a widening path meant only for HO. Plain Staff must be scoped to
+    /// their own campus exactly like Staff Leader already was.
+    /// </summary>
+    [Fact]
+    public async Task A_plain_staff_account_never_finds_another_campus_document_either()
+    {
+        RequireDb();
+        var docs = new List<(ulong, ulong)>();
+        try
+        {
+            var tag = Guid.NewGuid().ToString("N")[..6];
+            docs.Add(await AddDocumentAsync(CampusHn, $"NhanVienHN{tag}"));
+            docs.Add(await AddDocumentAsync(CampusHcm, $"NhanVienHCM{tag}"));
+
+            using var db = NewContext();
+            var handler = new SearchDocumentsQueryHandler(
+                db, new FakeUser(LeaderHn, RoleCodes.Staff, UserSubRoles.Staff, CampusHn));
+
+            // A plain Staff (not Leader) at CampusHn still cannot find the HCM document by exact title...
+            var hidden = await handler.Handle(
+                new SearchDocumentsQuery { Q = $"NhanVienHCM{tag}", Page = 1, PageSize = 200 }, CancellationToken.None);
+            Assert.DoesNotContain(hidden.Items, i => i.Title == $"NhanVienHCM{tag}");
+
+            // ...nor by explicitly asking for CampusHcm — the client-supplied CampusId must not widen
+            // a non-HO caller's scope.
+            var widened = await handler.Handle(
+                new SearchDocumentsQuery { CampusId = CampusHcm, Q = tag, Page = 1, PageSize = 200 }, CancellationToken.None);
+            Assert.DoesNotContain(widened.Items, i => i.Title == $"NhanVienHCM{tag}");
+
+            // ...but their own campus's document still surfaces.
+            var own = await handler.Handle(
+                new SearchDocumentsQuery { Q = $"NhanVienHN{tag}", Page = 1, PageSize = 200 }, CancellationToken.None);
+            Assert.Single(own.Items, i => i.Title == $"NhanVienHN{tag}");
+        }
+        finally { await CleanupAsync(docs); }
+    }
+
+    /// <summary>A non-HO caller with no PrimaryCampusId at all (there is no campus to scope to) is
+    /// refused outright — the pre-existing behavior for Staff Leader (`isStaffLeader &amp;&amp; campusId
+    /// == null -> Forbidden`), now extended to plain Staff too instead of falling through unscoped.</summary>
+    [Fact]
+    public async Task A_staff_account_with_no_primary_campus_is_refused_not_shown_every_campus()
+    {
+        RequireDb();
+        using var db = NewContext();
+        var handler = new SearchDocumentsQueryHandler(
+            db, new FakeUser(LeaderHn, RoleCodes.Staff, UserSubRoles.Staff, campusId: null));
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            handler.Handle(new SearchDocumentsQuery { Page = 1, PageSize = 200 }, CancellationToken.None));
+    }
+
+    // ── ViewDocumentDetailQueryHandler: same bug, same fix, GET-by-id shape ────────────────────────
+    // The isStaffLeader-only check on document.CampusId used to let a plain Staff account view ANY
+    // document by id regardless of campus.
+
+    [Fact]
+    public async Task A_plain_staff_account_cannot_view_another_campus_document_by_id()
+    {
+        RequireDb();
+        var docs = new List<(ulong, ulong)>();
+        try
+        {
+            var tag = Guid.NewGuid().ToString("N")[..6];
+            docs.Add(await AddDocumentAsync(CampusHcm, $"DetailHCM{tag}"));
+            var hcmDocId = docs[0].Item1;
+
+            using var db = NewContext();
+            var handler = new ViewDocumentDetailQueryHandler(
+                db, new FakeUser(LeaderHn, RoleCodes.Staff, UserSubRoles.Staff, CampusHn));
+
+            await Assert.ThrowsAsync<ForbiddenException>(() =>
+                handler.Handle(new ViewDocumentDetailQuery { DocumentId = hcmDocId }, CancellationToken.None));
+        }
+        finally { await CleanupAsync(docs); }
+    }
+
+    [Fact]
+    public async Task A_staff_leader_still_views_their_own_campus_document_by_id()
+    {
+        RequireDb();
+        var docs = new List<(ulong, ulong)>();
+        try
+        {
+            var tag = Guid.NewGuid().ToString("N")[..6];
+            var (hnDocId, hnFileId) = await AddDocumentAsync(CampusHn, $"DetailHN{tag}");
+            docs.Add((hnDocId, hnFileId));
+
+            using var db = NewContext();
+            var handler = new ViewDocumentDetailQueryHandler(
+                db, new FakeUser(LeaderHn, RoleCodes.Staff, UserSubRoles.Leader, CampusHn));
+
+            var result = await handler.Handle(
+                new ViewDocumentDetailQuery { DocumentId = hnDocId }, CancellationToken.None);
+
+            Assert.Equal($"DetailHN{tag}", result.Document.Title);
+        }
+        finally { await CleanupAsync(docs); }
+    }
+
+    [Fact]
+    public async Task HO_can_view_any_campus_document_by_id()
+    {
+        RequireDb();
+        var docs = new List<(ulong, ulong)>();
+        try
+        {
+            var tag = Guid.NewGuid().ToString("N")[..6];
+            var (hcmDocId, hcmFileId) = await AddDocumentAsync(CampusHcm, $"DetailHOView{tag}");
+            docs.Add((hcmDocId, hcmFileId));
+
+            using var db = NewContext();
+            var handler = new ViewDocumentDetailQueryHandler(db, new FakeUser(500, RoleCodes.Ho));
+
+            var result = await handler.Handle(
+                new ViewDocumentDetailQuery { DocumentId = hcmDocId }, CancellationToken.None);
+
+            Assert.Equal($"DetailHOView{tag}", result.Document.Title);
         }
         finally { await CleanupAsync(docs); }
     }

@@ -103,4 +103,89 @@ public class ViewGuestDelegationListQueryHandlerTests
 
         Assert.Empty(result.Items);
     }
+
+    // ── DB-PAGE-001: Page/PageSize are bounded, not used exactly as received ─────────────────────
+
+    /// <summary>A request for a huge page size does not turn into an unbounded fetch — it is capped
+    /// at 100, the same ceiling GetAdminAuditLogsQueryHandler and its siblings already use.</summary>
+    [Fact]
+    public async Task PageSize_AboveMaximum_IsClampedTo100_AndFetchIsActuallyBounded()
+    {
+        const ulong userId = 101;
+        var (db, handler, _) = CreateSut(userId, RoleCodes.Staff, UserSubRoles.Staff);
+
+        for (ulong i = 1; i <= 150; i++)
+        {
+            var visitRequestId = 1000 + i;
+            var visitInstanceId = 2000 + i;
+            db.VisitRequests.Add(DelegationsTestData.CreateVisitRequest(visitRequestId));
+            db.VisitRequestCampuses.Add(DelegationsTestData.CreateVisitInstance(
+                visitInstanceId: visitInstanceId, visitRequestId: visitRequestId, currentHostUserId: userId));
+        }
+        db.SaveChanges();
+
+        var result = await handler.Handle(
+            new ViewGuestDelegationListQuery { Page = 1, PageSize = 100_000 }, CancellationToken.None);
+
+        Assert.Equal(100, result.PageSize);
+        Assert.True(result.Items.Count <= 100,
+            $"Expected at most 100 items, got {result.Items.Count} — PageSize was not bounded.");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-5)]
+    public async Task PageSize_ZeroOrNegative_IsClampedToOne(int requestedPageSize)
+    {
+        const ulong userId = 101;
+        var (db, handler, _) = CreateSut(userId, RoleCodes.Staff, UserSubRoles.Staff);
+        db.VisitRequests.Add(DelegationsTestData.CreateVisitRequest(20));
+        db.VisitRequestCampuses.Add(DelegationsTestData.CreateVisitInstance(
+            visitInstanceId: 200, visitRequestId: 20, currentHostUserId: userId));
+        db.SaveChanges();
+
+        var result = await handler.Handle(
+            new ViewGuestDelegationListQuery { Page = 1, PageSize = requestedPageSize }, CancellationToken.None);
+
+        Assert.Equal(1, result.PageSize);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-3)]
+    public async Task Page_ZeroOrNegative_IsClampedToOne(int requestedPage)
+    {
+        const ulong userId = 101;
+        var (db, handler, _) = CreateSut(userId, RoleCodes.Staff, UserSubRoles.Staff);
+        db.VisitRequests.Add(DelegationsTestData.CreateVisitRequest(20));
+        db.VisitRequestCampuses.Add(DelegationsTestData.CreateVisitInstance(
+            visitInstanceId: 200, visitRequestId: 20, currentHostUserId: userId));
+        db.SaveChanges();
+
+        var result = await handler.Handle(
+            new ViewGuestDelegationListQuery { Page = requestedPage, PageSize = 10 }, CancellationToken.None);
+
+        Assert.Equal(1, result.Page);
+        Assert.NotEmpty(result.Items);
+    }
+
+    /// <summary>An ordinary in-range request is completely unaffected by the clamp — same Page/PageSize
+    /// echoed back, same rows returned as before this fix.</summary>
+    [Fact]
+    public async Task PageSize_WithinRange_IsUnchanged()
+    {
+        const ulong userId = 101;
+        var (db, handler, _) = CreateSut(userId, RoleCodes.Staff, UserSubRoles.Staff);
+        db.VisitRequests.Add(DelegationsTestData.CreateVisitRequest(20));
+        db.VisitRequestCampuses.Add(DelegationsTestData.CreateVisitInstance(
+            visitInstanceId: 200, visitRequestId: 20, currentHostUserId: userId));
+        db.SaveChanges();
+
+        var result = await handler.Handle(
+            new ViewGuestDelegationListQuery { Page = 1, PageSize = 25 }, CancellationToken.None);
+
+        Assert.Equal(1, result.Page);
+        Assert.Equal(25, result.PageSize);
+        Assert.NotEmpty(result.Items);
+    }
 }

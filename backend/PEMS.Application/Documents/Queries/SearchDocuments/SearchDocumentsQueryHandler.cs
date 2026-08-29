@@ -26,11 +26,20 @@ public sealed class SearchDocumentsQueryHandler : IRequestHandler<SearchDocument
         if (!_currentUser.IsAuthenticated)
             throw new UnauthorizedAccessException();
 
-        // Must enforce campus scope for STAFF LEADER
-        var isStaffLeader = _currentUser.RoleCode == "STAFF" && _currentUser.SubRole == "LEADER";
+        // Must enforce campus scope for every non-HO caller (Staff AND Staff Leader). This used to
+        // check isStaffLeader only, so a plain Staff account fell through to the HO-only "optional
+        // self-chosen CampusId filter" branch below: unscoped with no CampusId param, or able to pick
+        // ANY campus's documents by passing one — exactly what the write side for the same rows
+        // (VisitDocumentAccess, PartnerAccess.CanEditPartner) never allows a Staff account to do.
+        // Must enforce campus scope for every non-HO caller (Staff AND Staff Leader). This used to
+        // check isStaffLeader only, so a plain Staff account fell through to the HO-only "optional
+        // self-chosen CampusId filter" branch below: unscoped with no CampusId param, or able to pick
+        // ANY campus's documents by passing one — exactly what the write side for the same rows
+        // (VisitDocumentAccess, PartnerAccess.CanEditPartner) never allows a Staff account to do.
+        var isHo = _currentUser.RoleCode == "HO";
         var campusId = _currentUser.PrimaryCampusId;
 
-        if (isStaffLeader && campusId == null)
+        if (!isHo && campusId == null)
             throw new ForbiddenException();
 
         var query = _context.Documents
@@ -39,13 +48,13 @@ public sealed class SearchDocumentsQueryHandler : IRequestHandler<SearchDocument
             .AsQueryable();
 
         // Enforce campus scope
-        if (isStaffLeader)
+        if (!isHo)
         {
             query = query.Where(d => d.CampusId == campusId);
         }
         else if (request.CampusId.HasValue)
         {
-            // HO: optional self-chosen filter (server never trusts this for Staff Leader —
+            // HO: optional self-chosen filter (server never trusts this for Staff/Staff Leader —
             // their scope above always wins regardless of what the client sends).
             query = query.Where(d => d.CampusId == request.CampusId.Value);
         }
@@ -94,9 +103,13 @@ public sealed class SearchDocumentsQueryHandler : IRequestHandler<SearchDocument
 
         var totalItems = await query.CountAsync(cancellationToken);
 
+        // DB-PAGE-002: bound page/pageSize the same way the other list queries already do.
+        var page = request.Page < 1 ? 1 : request.Page;
+        var pageSize = Math.Clamp(request.PageSize, 1, 100);
+
         var items = await query
-            .Skip((request.Page - 1) * request.PageSize)
-            .Take(request.PageSize)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .Select(d => new SearchDocumentsDto
             {
                 DocumentId = d.DocumentId,
@@ -121,6 +134,6 @@ public sealed class SearchDocumentsQueryHandler : IRequestHandler<SearchDocument
             })
             .ToListAsync(cancellationToken);
 
-        return PaginatedResult<SearchDocumentsDto>.Create(items, request.Page, request.PageSize, totalItems);
+        return PaginatedResult<SearchDocumentsDto>.Create(items, page, pageSize, totalItems);
     }
 }

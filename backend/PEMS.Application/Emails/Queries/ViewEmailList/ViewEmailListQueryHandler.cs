@@ -143,10 +143,16 @@ public class ViewEmailListQueryHandler : IRequestHandler<ViewEmailListQuery, Vie
 
         var totalCount = await combinedQuery.CountAsync(cancellationToken);
 
+        // DB-PAGE-002: bound page/pageSize the same way the other list queries already do
+        // (GetAdminAuditLogsQueryHandler etc.) - unbounded PageSize let a client request an
+        // arbitrarily large result set in one query.
+        var page = request.Page < 1 ? 1 : request.Page;
+        var pageSize = Math.Clamp(request.PageSize, 1, 100);
+
         var items = await combinedQuery
             .OrderByDescending(x => x.CreatedAt)
-            .Skip((request.Page - 1) * request.PageSize)
-            .Take(request.PageSize)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .ToListAsync(cancellationToken);
 
         // Enhance Counterpart Name/Email for received emails
@@ -172,12 +178,12 @@ public class ViewEmailListQueryHandler : IRequestHandler<ViewEmailListQuery, Vie
             }
         }
 
-        return new ViewEmailListResponse 
-        { 
-            Items = items, 
-            TotalCount = totalCount, 
-            Page = request.Page, 
-            PageSize = request.PageSize 
+        return new ViewEmailListResponse
+        {
+            Items = items,
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize
         };
     }
 }

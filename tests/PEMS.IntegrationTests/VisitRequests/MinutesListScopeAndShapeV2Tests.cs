@@ -383,4 +383,134 @@ public sealed class MinutesListScopeAndShapeV2Tests
             foreach (var requestId in requestIds) await CleanupAsync(requestId);
         }
     }
+
+    /// <summary>Same shape as <see cref="AddMinuteAsync"/> but lets the test control Status and the
+    /// edit-lock fields, which the shared helper always leaves at DRAFT/unlocked.</summary>
+    private static async Task<ulong> AddMinuteWithStateAsync(
+        ulong instanceId, string title, ulong authorId, string status,
+        ulong? editLockedBy = null, DateTime? editLockExpiresAt = null)
+    {
+        using var db = NewContext();
+        var minute = new Minute
+        {
+            VisitInstanceId = instanceId,
+            Title = title,
+            Content = "Nội dung biên bản " + title,
+            Status = status,
+            EditLockedBy = editLockedBy,
+            EditLockExpiresAt = editLockExpiresAt,
+            RowVersion = 0,
+            CreatedAt = Now,
+            CreatedBy = authorId,
+        };
+        db.Minutes.Add(minute);
+        await db.SaveChangesAsync();
+
+        db.MinuteParticipants.Add(new MinuteParticipant
+        {
+            MinutesId = minute.MinutesId,
+            UserId = authorId,
+            FullNameSnapshot = $"[IT] Người dự {authorId}",
+            AttendanceStatus = "PRESENT",
+            CreatedAt = Now,
+        });
+        await db.SaveChangesAsync();
+        return minute.MinutesId;
+    }
+
+    /// <summary>
+    /// DB-SHAPE-001: TotalMinutes/DraftCount/SavedCount/LockedCount used to be four sequential
+    /// COUNT(*) queries over the identical scoped set - merged into one GROUP BY query. This proves
+    /// the merged query still computes the SAME four numbers a naive reader would count by hand,
+    /// through the real MySQL translation - not just that it compiles.
+    /// </summary>
+    [Fact]
+    public async Task SummaryCounts_MatchHandCountedExpectations_AfterMergingIntoOneQuery()
+    {
+        RequireDb();
+        // Summary counts are computed BEFORE the keyword filter (they reflect the actor's whole scope,
+        // per the handler's own "Summary queries before pagination but after scope filtering" comment),
+        // so pre-existing HN minutes from seed data / other tests are already in them. Assert the DELTA
+        // this fixture adds rather than an absolute total, which would be flaky against shared data.
+        // uq_minutes_visit_instance allows one minute per instance, so three distinct counted minutes
+        // need three single-campus requests on the SAME campus/actor scope.
+        var tag = Guid.NewGuid().ToString("N")[..6];
+        var requestIds = new List<ulong>();
+        try
+        {
+            async Task<Application.MeetingMinutes.Queries.SearchAndFilterMinutes.MinutesSummaryDto> SummaryAsync()
+            {
+                using var db = NewContext();
+                var res = await new SearchAndFilterMinutesQueryHandler(
+                        db, new FakeUser(LeaderHn, RoleCodes.Staff, UserSubRoles.Leader, CampusHn))
+                    .Handle(new SearchAndFilterMinutesQuery { Page = 1, PageSize = 1 }, CancellationToken.None);
+                return res.Summary;
+            }
+
+            var before = await SummaryAsync();
+
+            async Task<ulong> OneInstanceAsync(int n)
+            {
+                var requestId = await CreateAsync(Campus("HN", Now.AddDays(50 + n), $"Đoàn{n}{tag}"));
+                requestIds.Add(requestId);
+                var instances = await InstanceIdsAsync(requestId);
+                await ApproveAsync(requestId, instances[CampusHn], LeaderHn, CampusHn, IcStaffHn);
+                return instances[CampusHn];
+            }
+
+            var draftInstance = await OneInstanceAsync(1);
+            var savedInstance = await OneInstanceAsync(2);
+            var lockedDraftInstance = await OneInstanceAsync(3);
+
+            await AddMinuteWithStateAsync(draftInstance, $"BB1{tag}", IcStaffHn, "DRAFT");
+            await AddMinuteWithStateAsync(savedInstance, $"BB2{tag}", IcStaffHn, "SAVED");
+            await AddMinuteWithStateAsync(lockedDraftInstance, $"BB3{tag}", IcStaffHn, "DRAFT",
+                editLockedBy: IcStaffHn, editLockExpiresAt: Now.AddMinutes(10));
+
+            var after = await SummaryAsync();
+
+            Assert.Equal(3, after.TotalMinutes - before.TotalMinutes);
+            Assert.Equal(2, after.DraftCount - before.DraftCount);
+            Assert.Equal(1, after.SavedCount - before.SavedCount);
+            Assert.Equal(1, after.LockedCount - before.LockedCount);
+        }
+        finally
+        {
+            foreach (var requestId in requestIds) await CleanupAsync(requestId);
+        }
+    }
+
+    /// <summary>The merged GROUP BY query costs fewer round trips than the four separate COUNT(*)
+    /// calls it replaced - the actual point of DB-SHAPE-001, not just that the numbers still add up.</summary>
+    [Fact]
+    public async Task SummaryCounts_CostFewerRoundTripsThanFourSeparateCounts()
+    {
+        RequireDb();
+        var tag = Guid.NewGuid().ToString("N")[..6];
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(60), $"Đoàn{tag}"));
+            var instances = await InstanceIdsAsync(requestId);
+            await ApproveAsync(requestId, instances[CampusHn], LeaderHn, CampusHn, IcStaffHn);
+            await AddMinuteAsync(instances[CampusHn], $"BB{tag}", IcStaffHn);
+
+            var counter = new CommandCounter();
+            using var db = NewContext(counter);
+            await new SearchAndFilterMinutesQueryHandler(
+                    db, new FakeUser(LeaderHn, RoleCodes.Staff, UserSubRoles.Leader, CampusHn))
+                .Handle(new SearchAndFilterMinutesQuery { Q = tag, Page = 1, PageSize = 50 }, CancellationToken.None);
+
+            // Empirically measured against this exact fixture: 11 round trips with the merged summary
+            // query, 14 with the original four separate CountAsync calls restored (confirmed by
+            // temporarily reverting SearchAndFilterMinutesQueryHandler and rerunning this test) - a
+            // reduction of exactly 3, matching the fix. Asserted with one query of slack rather than
+            // pinning the bare 11, so an unrelated future addition elsewhere in the handler does not
+            // make this test flaky - only a regression back toward the pre-fix shape would trip it.
+            Assert.True(counter.Count <= 12,
+                $"Expected at most 12 round trips (11 with the merge + 1 slack); got {counter.Count} - " +
+                "the summary counts may have regressed back to separate COUNT(*) queries.");
+        }
+        finally { await CleanupAsync(requestId); }
+    }
 }

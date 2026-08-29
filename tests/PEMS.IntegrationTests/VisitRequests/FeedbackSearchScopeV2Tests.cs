@@ -13,6 +13,7 @@ using PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
 using PEMS.Application.Delegations.Services;
 using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Application.Feedbacks.Queries.SearchAndFilterFeedback;
+using PEMS.Application.Feedbacks.Queries.ViewFeedbackSummary;
 using PEMS.Application.Notifications.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Feedbacks;
@@ -279,6 +280,88 @@ public sealed class FeedbackSearchScopeV2Tests
             Assert.Equal($"ĐoànHN{tag}", hn.Title);
             Assert.Equal(instances[CampusHcm], hcm.InstanceId);
             Assert.Equal($"ĐoànHCM{tag}", hcm.Title);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// Security fix: the campus-scope check used to be `if (PrimaryCampusId.HasValue &amp;&amp; role
+    /// not HO/ADMIN)`, so a non-HO/ADMIN caller with no PrimaryCampusId — which auto-provisioned
+    /// Visitor accounts always are, and this endpoint carries no role restriction beyond
+    /// <c>[Authorize]</c> — skipped scoping entirely and read every campus's feedback. A non-HO/ADMIN
+    /// caller's visibility IS "their own campus's feedback"; with no campus to scope to, that must be
+    /// zero rows, never every campus's.
+    /// </summary>
+    [Fact]
+    public async Task A_caller_with_no_primary_campus_sees_no_feedback_not_every_campus()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var tag = Guid.NewGuid().ToString("N")[..6];
+            var start = Now.AddDays(62);
+            requestId = await CreateAsync(
+                Campus("HN", start, $"ĐoànHN{tag}"),
+                Campus("HCM", start.AddDays(1), $"ĐoànHCM{tag}"));
+            var instances = await InstanceIdsAsync(requestId);
+            await ApproveAsync(requestId, instances[CampusHn], LeaderHn, CampusHn, IcStaffHn);
+            await ApproveAsync(requestId, instances[CampusHcm], LeaderHcm, CampusHcm, IcStaffHcm);
+
+            await AddFeedbackAsync(requestId, instances[CampusHn], $"NoScope{tag}");
+            await AddFeedbackAsync(requestId, instances[CampusHcm], $"NoScope{tag}");
+
+            using var db = NewContext();
+            // A Visitor role, exactly as an auto-provisioned account looks: authenticated, no campus.
+            var handler = new SearchAndFilterFeedbackQueryHandler(db, new FakeUser(Registrant, RoleCodes.Visitor));
+
+            var result = await handler.Handle(
+                new SearchAndFilterFeedbackQuery { Q = $"NoScope{tag}", Page = 1, PageSize = 200 },
+                CancellationToken.None);
+
+            Assert.DoesNotContain(result.Items, i => i.VisitRequestId == requestId);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>Same bug, same fix, in ViewFeedbackSummaryQueryHandler's grouped summary view — it had
+    /// the identical unconditional `else if (request.CampusId.HasValue)` fallback, which for a
+    /// campus-less non-HO/ADMIN caller (meant only for HO/ADMIN's own optional filter) meant they could
+    /// even choose which campus's summary to read.
+    ///
+    /// Uses the delegation-name tag for Q rather than the comment text: unlike
+    /// SearchAndFilterFeedbackQueryHandler, this handler's Q filter matches request-level delegation
+    /// name / submitter / target snapshots, never Comment.</summary>
+    [Fact]
+    public async Task Summary_view_also_shows_nothing_to_a_caller_with_no_primary_campus()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var tag = Guid.NewGuid().ToString("N")[..6];
+            var start = Now.AddDays(63);
+            requestId = await CreateAsync(
+                Campus("HN", start, $"ĐoànHN{tag}"),
+                Campus("HCM", start.AddDays(1), $"ĐoànHCM{tag}"));
+            var instances = await InstanceIdsAsync(requestId);
+            await ApproveAsync(requestId, instances[CampusHn], LeaderHn, CampusHn, IcStaffHn);
+            await ApproveAsync(requestId, instances[CampusHcm], LeaderHcm, CampusHcm, IcStaffHcm);
+
+            await AddFeedbackAsync(requestId, instances[CampusHn], $"SummaryNoScope{tag}");
+            await AddFeedbackAsync(requestId, instances[CampusHcm], $"SummaryNoScope{tag}");
+
+            using var db = NewContext();
+            var handler = new ViewFeedbackSummaryQueryHandler(db, new FakeUser(Registrant, RoleCodes.Visitor));
+
+            // Even trying to widen scope with an explicit CampusId must not work for this role. Q
+            // matches on the delegation name tag (`Đoàn...{tag}`), which this handler's Q filter
+            // actually searches.
+            var result = await handler.Handle(
+                new ViewFeedbackSummaryQuery { Q = tag, CampusId = CampusHn, Page = 1, PageSize = 200 },
+                CancellationToken.None);
+
+            Assert.DoesNotContain(result.Items, i => i.VisitRequestId == requestId);
         }
         finally { await CleanupAsync(requestId); }
     }

@@ -53,14 +53,30 @@ public sealed class SearchAndFilterMinutesQueryHandler : IRequestHandler<SearchA
         // counts even when individual rows are filtered out.
         var query = MinuteAccess.WhereAuthorizedFor(joined.Select(x => x.m), _db, _currentUser);
 
-        // Summary queries before pagination but after scope filtering
-        var totalMinutes = await query.CountAsync(cancellationToken);
-        var draftCount = await query.CountAsync(m => m.Status == "DRAFT", cancellationToken);
-        var savedCount = await query.CountAsync(m => m.Status == "SAVED", cancellationToken);
-        
+        // Summary queries before pagination but after scope filtering.
+        // DB-SHAPE-001: these were 4 sequential COUNT(*) round trips over the identical `query` set,
+        // differing only in predicate - merged into one GROUP BY query (COUNT(*) plus three
+        // conditional counts, translated to SUM(CASE WHEN ...) in SQL) so the summary panel costs one
+        // round trip instead of four. GroupBy(m => 1) yields no group at all when `query` matches
+        // nothing, so all four default to 0 below - exactly what four independent CountAsync calls
+        // already returned for an empty source.
         var now = VietnamTime.Now();
-        var lockedCount = await query.CountAsync(m => m.EditLockedBy != null && m.EditLockExpiresAt != null && m.EditLockExpiresAt > now, cancellationToken);
-        
+        var summaryCounts = await query
+            .GroupBy(m => 1)
+            .Select(g => new
+            {
+                Total = g.Count(),
+                Draft = g.Count(m => m.Status == "DRAFT"),
+                Saved = g.Count(m => m.Status == "SAVED"),
+                Locked = g.Count(m => m.EditLockedBy != null && m.EditLockExpiresAt != null && m.EditLockExpiresAt > now),
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var totalMinutes = summaryCounts?.Total ?? 0;
+        var draftCount = summaryCounts?.Draft ?? 0;
+        var savedCount = summaryCounts?.Saved ?? 0;
+        var lockedCount = summaryCounts?.Locked ?? 0;
+
         var openActionItemCountQuery = from m in query
                                        join ai in _db.MinuteActionItems on m.MinutesId equals ai.MinutesId
                                        where ai.Status == "TODO" || ai.Status == "IN_PROGRESS"
@@ -128,8 +144,8 @@ public sealed class SearchAndFilterMinutesQueryHandler : IRequestHandler<SearchA
 
         var filteredCount = await query.CountAsync(cancellationToken);
 
-        // Pagination
-        var pageSize = request.PageSize > 0 ? request.PageSize : 10;
+        // Pagination. DB-PAGE-002: the existing floor left PageSize unbounded above.
+        var pageSize = Math.Clamp(request.PageSize > 0 ? request.PageSize : 10, 1, 100);
         var page = request.Page > 0 ? request.Page : 1;
         var minutesPage = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);
 

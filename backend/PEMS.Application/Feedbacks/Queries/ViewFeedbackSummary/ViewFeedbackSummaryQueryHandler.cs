@@ -24,16 +24,28 @@ public class ViewFeedbackSummaryQueryHandler : IRequestHandler<ViewFeedbackSumma
     {
         var query = _context.Feedbacks.AsNoTracking();
 
-        if (_currentUserService.PrimaryCampusId.HasValue &&
-            _currentUserService.RoleCode != "HO" &&
+        if (_currentUserService.RoleCode != "HO" &&
             _currentUserService.RoleCode != "ADMIN")
         {
-            var campusId = _currentUserService.PrimaryCampusId.Value;
-            var allowedInstanceIds = _context.VisitRequestCampuses
-                .Where(x => x.CampusId == campusId)
-                .Select(x => x.VisitInstanceId);
+            // Security fix: this used to be `if (PrimaryCampusId.HasValue && role-not-HO/ADMIN)`, so a
+            // non-HO/ADMIN caller with no PrimaryCampusId (auto-provisioned Visitor accounts never get
+            // one set) skipped scoping entirely — AND fell through to the request.CampusId branch below,
+            // which was meant only for HO/ADMIN's own optional filter, so an unscoped Visitor could even
+            // choose which campus's feedback to read. A non-HO/ADMIN caller's visibility IS "their own
+            // campus's feedback" — with no campus to scope to, that is zero rows, never every campus's.
+            if (_currentUserService.PrimaryCampusId.HasValue)
+            {
+                var campusId = _currentUserService.PrimaryCampusId.Value;
+                var allowedInstanceIds = _context.VisitRequestCampuses
+                    .Where(x => x.CampusId == campusId)
+                    .Select(x => x.VisitInstanceId);
 
-            query = query.Where(x => x.VisitInstanceId.HasValue && allowedInstanceIds.Contains(x.VisitInstanceId.Value));
+                query = query.Where(x => x.VisitInstanceId.HasValue && allowedInstanceIds.Contains(x.VisitInstanceId.Value));
+            }
+            else
+            {
+                query = query.Where(x => false);
+            }
         }
         else if (request.CampusId.HasValue)
         {

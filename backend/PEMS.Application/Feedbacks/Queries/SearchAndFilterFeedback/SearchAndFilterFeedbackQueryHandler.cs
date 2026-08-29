@@ -24,16 +24,27 @@ public class SearchAndFilterFeedbackQueryHandler : IRequestHandler<SearchAndFilt
     {
         var query = _context.Feedbacks.AsNoTracking();
 
-        if (_currentUserService.PrimaryCampusId.HasValue && 
-            _currentUserService.RoleCode != "HO" && 
+        if (_currentUserService.RoleCode != "HO" &&
             _currentUserService.RoleCode != "ADMIN")
         {
-            var campusId = _currentUserService.PrimaryCampusId.Value;
-            var allowedInstanceIds = _context.VisitRequestCampuses
-                .Where(x => x.CampusId == campusId)
-                .Select(x => x.VisitInstanceId);
+            // Security fix: this used to be `if (PrimaryCampusId.HasValue && role-not-HO/ADMIN)`, so a
+            // non-HO/ADMIN caller with no PrimaryCampusId (auto-provisioned Visitor accounts never get
+            // one set — see UserProvisionService) skipped scoping entirely and read every feedback row
+            // system-wide. A non-HO/ADMIN caller's visibility IS "their own campus's feedback" — with
+            // no campus to scope to, that is zero rows, never every campus's.
+            if (_currentUserService.PrimaryCampusId.HasValue)
+            {
+                var campusId = _currentUserService.PrimaryCampusId.Value;
+                var allowedInstanceIds = _context.VisitRequestCampuses
+                    .Where(x => x.CampusId == campusId)
+                    .Select(x => x.VisitInstanceId);
 
-            query = query.Where(x => x.VisitInstanceId.HasValue && allowedInstanceIds.Contains(x.VisitInstanceId.Value));
+                query = query.Where(x => x.VisitInstanceId.HasValue && allowedInstanceIds.Contains(x.VisitInstanceId.Value));
+            }
+            else
+            {
+                query = query.Where(x => false);
+            }
         }
 
         if (request.FromDate.HasValue)
@@ -77,11 +88,15 @@ public class SearchAndFilterFeedbackQueryHandler : IRequestHandler<SearchAndFilt
         }
 
         var total = await query.CountAsync(cancellationToken);
-        
+
+        // DB-PAGE-002: bound page/pageSize the same way the other list queries already do.
+        var page = request.Page < 1 ? 1 : request.Page;
+        var pageSize = Math.Clamp(request.PageSize, 1, 100);
+
         var list = await query
             .OrderByDescending(x => x.SubmittedAt)
-            .Skip((request.Page - 1) * request.PageSize)
-            .Take(request.PageSize)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .ToListAsync(cancellationToken);
 
         // Feedback rows are INSTANCE-scoped: each row is titled with THAT instance's own detail name.
@@ -118,6 +133,6 @@ public class SearchAndFilterFeedbackQueryHandler : IRequestHandler<SearchAndFilt
             SubmittedAt = x.SubmittedAt
         }).ToList();
 
-        return PaginatedResult<FeedbackListItem>.Create(items, request.Page, request.PageSize, total);
+        return PaginatedResult<FeedbackListItem>.Create(items, page, pageSize, total);
     }
 }

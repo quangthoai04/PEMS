@@ -52,4 +52,29 @@ public class GetVisitInvitationsQueryHandlerTests
         var invite = Assert.Single(result.Items);
         Assert.Contains("OPEN_CONTRIBUTION", invite.AllowedActions);
     }
+
+    // DB-PAGE-002: Page/PageSize were passed straight through to Skip/Take with no bound, so a client
+    // could request an arbitrarily large page (or a non-positive Page/PageSize) in one query.
+    [Theory]
+    [InlineData(0, 20, 1, 20)]      // Page < 1 floors to 1
+    [InlineData(-5, 20, 1, 20)]     // negative Page floors to 1
+    [InlineData(1, 0, 1, 1)]        // PageSize < 1 floors to 1
+    [InlineData(1, 100000, 1, 100)] // PageSize > 100 ceilings to 100
+    public async Task PageAndPageSize_AreClamped(int requestedPage, int requestedPageSize, int expectedPage, int expectedPageSize)
+    {
+        const ulong userId = 102;
+        var (db, handler, _) = CreateSut(userId, RoleCodes.Staff, UserSubRoles.Leader);
+
+        var participant = DelegationsTestData.CreateParticipant(501, userId, ParticipantRoles.IcSupport, ParticipantStatuses.Accepted);
+        participant.VisitInstanceId = DelegationsTestData.VisitInstanceId;
+        db.VisitParticipants.Add(participant);
+        db.SaveChanges();
+
+        var result = await handler.Handle(
+            new GetVisitInvitationsQuery { Page = requestedPage, PageSize = requestedPageSize },
+            CancellationToken.None);
+
+        Assert.Equal(expectedPage, result.Page);
+        Assert.Equal(expectedPageSize, result.PageSize);
+    }
 }

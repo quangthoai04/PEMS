@@ -97,6 +97,18 @@ public sealed class ViewGuestDelegationListQueryHandler
         if (!_currentUser.UserId.HasValue)
             throw new UnauthorizedAccessException("Current user is not authenticated.");
 
+        // DB-PAGE-001: Page/PageSize were used exactly as received, with no bound — the same
+        // Math.Clamp(1, 100) convention already applied in GetAdminAuditLogsQueryHandler and its
+        // siblings, reused here since this is the busiest list surface in the module. Replacing
+        // `request` with the clamped clone (rather than threading two extra parameters through every
+        // call site below) means every downstream read of request.Page/request.PageSize — including
+        // the early-return at the bottom of this block and the three query paths further down — is
+        // already bounded; MergeFetchCap's own unrelated 1000-row internal cap is untouched.
+        var clampedPage = request.Page < 1 ? 1 : request.Page;
+        var clampedPageSize = Math.Clamp(request.PageSize, 1, 100);
+        if (clampedPage != request.Page || clampedPageSize != request.PageSize)
+            request = WithClampedPaging(request, clampedPage, clampedPageSize);
+
         var userId = _currentUser.UserId.Value;
         var roleCode = _currentUser.RoleCode;
         var subRole = _currentUser.SubRole;
@@ -766,6 +778,41 @@ public sealed class ViewGuestDelegationListQueryHandler
         Timing = source.Timing,
         SortBy = source.SortBy,
         SortOrder = source.SortOrder,
+    };
+
+    /// <summary>
+    /// Full clone with Page/PageSize replaced by the already-clamped values (DB-PAGE-001). Unlike
+    /// <see cref="CloneForMerge"/> — which is a deliberately narrower, merge-source-specific copy that
+    /// drops several fields for reasons documented on it — this is the SAME request the caller made,
+    /// every field copied verbatim, with only the page bounds changed.
+    /// </summary>
+    private static ViewGuestDelegationListQuery WithClampedPaging(
+        ViewGuestDelegationListQuery source, int page, int pageSize) => new()
+    {
+        Tab = source.Tab,
+        Page = page,
+        PageSize = pageSize,
+        Keyword = source.Keyword,
+        VisitRequestId = source.VisitRequestId,
+        RequestStatus = source.RequestStatus,
+        CampusStatus = source.CampusStatus,
+        EffectiveStatus = source.EffectiveStatus,
+        EffectiveStatuses = source.EffectiveStatuses,
+        CampusId = source.CampusId,
+        VisitScope = source.VisitScope,
+        VisitScopes = source.VisitScopes,
+        FromDate = source.FromDate,
+        ToDate = source.ToDate,
+        CancelledOnly = source.CancelledOnly,
+        PendingApprovalAny = source.PendingApprovalAny,
+        ApprovedAny = source.ApprovedAny,
+        Relation = source.Relation,
+        ReadOnlyOnly = source.ReadOnlyOnly,
+        ActionableOnly = source.ActionableOnly,
+        Timing = source.Timing,
+        SortBy = source.SortBy,
+        SortOrder = source.SortOrder,
+        SkipEnrichment = source.SkipEnrichment,
     };
 
     /// <summary>
@@ -1720,7 +1767,6 @@ public sealed class ViewGuestDelegationListQueryHandler
             pageQuery = pageQuery.OrderByDescending(vr => vr.CreatedAt).ThenByDescending(vr => vr.VisitRequestId);
 
         var requests = await pageQuery
-            .Include(vr => vr.Partner)
             .Include(vr => vr.CampusInstances)
                 .ThenInclude(c => c.FormDetail) // per-campus delegation names for v2 match contexts (all campuses authorized here)
             .Skip((request.Page - 1) * request.PageSize)
@@ -1753,6 +1799,17 @@ public sealed class ViewGuestDelegationListQueryHandler
         var userNames = userIds.Count == 0
             ? new Dictionary<ulong, string>()
             : await _context.Users.Where(u => userIds.Contains(u.UserId)).ToDictionaryAsync(u => u.UserId, u => u.FullName, ct);
+
+        // DB-PROJ-001: Name is the only Partner field this method ever reads (below) - Include(vr =>
+        // vr.Partner) used to eager-load the whole Partner entity (contact info, status, every other
+        // column) for every row in the page just for that one field. Same lightweight lookup shape
+        // QueryInstanceLevelAsync already uses for its own partnerNames (see partnerIds/partnerNames
+        // above in this file), applied here for request-level rows.
+        var partnerIds = requests.Where(vr => vr.PartnerId.HasValue).Select(vr => vr.PartnerId!.Value).Distinct().ToList();
+        var partnerNames = partnerIds.Count == 0
+            ? new Dictionary<ulong, string>()
+            : await _context.Partners.Where(p => partnerIds.Contains(p.PartnerId))
+                .ToDictionaryAsync(p => p.PartnerId, p => p.Name, ct);
 
         var nowForCancel = _clock.VietnamNow;
         // planned_start_at is a LOCAL wall-clock DATETIME → the 24h edit window must be
@@ -1905,7 +1962,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                 registrantFullName: vr.RegistrantFullName,
                 registrantNationality: vr.RegistrantNationality,
                 registrantJobTitle: vr.RegistrantJobTitle,
-                partnerName: vr.Partner?.Name,
+                partnerName: vr.PartnerId.HasValue && partnerNames.TryGetValue(vr.PartnerId.Value, out var pnm) ? pnm : null,
                 operationalContactName: null);
             var campusMatchScopes = instances
                 .Select(i => new VisitSearchMatchContextBuilder.CampusScope(
@@ -1932,7 +1989,9 @@ public sealed class ViewGuestDelegationListQueryHandler
                 DelegationName = vr.HasMixedCampusDetails
                     ? "Khác nhau theo cơ sở"
                     : instances.FirstOrDefault()?.FormDetail?.DelegationName,
-                PartnerName = vr.Partner != null ? vr.Partner.Name : vr.RegistrantOrganization,
+                PartnerName = vr.PartnerId.HasValue && partnerNames.TryGetValue(vr.PartnerId.Value, out var partnerNameForDto)
+                    ? partnerNameForDto
+                    : vr.RegistrantOrganization,
                 RequestStatus = vr.Status,
                 CampusStatus = single?.Status,
                 VisitScope = vr.VisitScope,

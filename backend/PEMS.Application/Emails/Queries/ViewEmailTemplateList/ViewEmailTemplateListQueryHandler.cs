@@ -48,7 +48,9 @@ public sealed class ViewEmailTemplateListQueryHandler : IRequestHandler<ViewEmai
         var totalItems = await query.CountAsync(cancellationToken);
         
         var page = request.Page > 0 ? request.Page : 1;
-        var pageSize = request.PageSize > 0 ? request.PageSize : 10;
+        // DB-PAGE-002: the existing floor left PageSize unbounded above - a client could request an
+        // arbitrarily large page in one query.
+        var pageSize = Math.Clamp(request.PageSize > 0 ? request.PageSize : 10, 1, 100);
         var totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
 
         var templates = await query

@@ -34,6 +34,11 @@ public sealed class GetVisitInvitationsQueryHandler
         if (!_currentUser.IsAuthenticated || _currentUser.UserId is null)
             throw new ForbiddenException();
 
+        // DB-PAGE-002: bound page/pageSize the same way the other list queries already do. Named
+        // pageNumber (not "page") because this handler already uses "page" for the fetched result list.
+        var pageNumber = request.Page < 1 ? 1 : request.Page;
+        var pageSize = Math.Clamp(request.PageSize, 1, 100);
+
         var userId = _currentUser.UserId.Value;
         var roleCode = _currentUser.RoleCode?.ToUpperInvariant();
         var subRole = _currentUser.SubRole?.ToUpperInvariant();
@@ -69,7 +74,7 @@ public sealed class GetVisitInvitationsQueryHandler
         else
         {
             // Các role khác không có dữ liệu
-            return PaginatedResult<InvitationListItemDto>.Create(new List<InvitationListItemDto>(), request.Page, request.PageSize, 0);
+            return PaginatedResult<InvitationListItemDto>.Create(new List<InvitationListItemDto>(), pageNumber, pageSize, 0);
         }
 
         // Lọc theo keyword. Scope-before-keyword: q is already restricted to the actor's own
@@ -109,8 +114,8 @@ public sealed class GetVisitInvitationsQueryHandler
         var total = await q.CountAsync(cancellationToken);
 
         var pageQuery = q.OrderByDescending(x => x.p.InvitedAt ?? x.p.AssignedAt ?? x.p.CreatedAt)
-                         .Skip((request.Page - 1) * request.PageSize)
-                         .Take(request.PageSize);
+                         .Skip((pageNumber - 1) * pageSize)
+                         .Take(pageSize);
 
         var page = await pageQuery
             .Select(x => new
@@ -136,7 +141,7 @@ public sealed class GetVisitInvitationsQueryHandler
             .ToListAsync(cancellationToken);
 
         if (page.Count == 0)
-            return PaginatedResult<InvitationListItemDto>.Create(new List<InvitationListItemDto>(), request.Page, request.PageSize, total);
+            return PaginatedResult<InvitationListItemDto>.Create(new List<InvitationListItemDto>(), pageNumber, pageSize, total);
 
         var campusIds = page.Select(x => x.CampusId).Distinct().ToList();
         var userIds = page.Where(x => x.InvitedBy.HasValue).Select(x => x.InvitedBy!.Value).Distinct().ToList();
@@ -219,6 +224,6 @@ public sealed class GetVisitInvitationsQueryHandler
             return dto;
         }).ToList();
 
-        return PaginatedResult<InvitationListItemDto>.Create(items, request.Page, request.PageSize, total);
+        return PaginatedResult<InvitationListItemDto>.Create(items, pageNumber, pageSize, total);
     }
 }
