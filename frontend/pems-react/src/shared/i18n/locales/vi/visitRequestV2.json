@@ -924,6 +924,7 @@
     "confirmationSource": "Nguồn xác nhận",
     "confirmedAt": "Xác nhận lúc",
     "unavailable": "Chưa có thông tin đầu mối đoàn khách",
+    "organizationInSystem": "✓ Tổ chức đã có trong hệ thống",
     "status": {
       "pending": "Chờ xác nhận",
       "confirmed": "Đã xác nhận",

@@ -222,6 +222,7 @@ public sealed class GetVisitInstanceContributionQueryHandler
             OperationalContactJobTitle = d.OperationalContact.JobTitle,
             OperationalContactPhone = d.OperationalContact.Phone,
             OperationalContactEmail = d.OperationalContact.Email,
+            OperationalContactIsOrganizationInSystem = d.OperationalContact.IsOrganizationInSystem,
 
             Campuses = visit.CampusInstances
                 .OrderBy(c => c.PlannedStartAt)
@@ -399,6 +400,7 @@ public sealed class GetVisitInstanceContributionQueryHandler
         MemberType = r.MemberType,
         FullName = r.FullName,
         Organization = r.Organization,
+        OrganizationPartnerId = r.OrganizationPartnerId,
         JobTitle = r.JobTitle,
         Nationality = r.Nationality,
         DisplayOrder = r.DisplayOrder,

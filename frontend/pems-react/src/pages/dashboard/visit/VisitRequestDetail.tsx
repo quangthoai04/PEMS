@@ -18,6 +18,7 @@ import {
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
 import type { VisitProcessDetail } from '../../../features/delegations/types/delegations.types';
 import { formatLocalizedDateTime, type UiLanguage } from '../../../shared/utils/vietnamTime';
+import { PartnerSystemBadge } from '../../../shared/components/PartnerSystemBadge';
 import { LoadingState, ErrorState } from '../../../shared/components/state';
 import { useAuth } from '../../../shared/hooks/useAuth';
 
@@ -213,6 +214,12 @@ export function VisitRequestDetail() {
                       <span className="text-sm font-normal text-gray-800">{opContact}</span>
                       {opContactReach && (
                         <span className="block text-xs font-normal text-gray-500 mt-0.5 break-all">{opContactReach}</span>
+                      )}
+                      {summary?.operationalContactIsOrganizationInSystem && (
+                        <PartnerSystemBadge
+                          strength="light"
+                          label={tt('requestDetail.fields.operationalContactOrganizationInSystem')}
+                        />
                       )}
                     </Field>
                   </div>

@@ -126,6 +126,9 @@ public sealed class SubmittedOperationalContactDto
     public DateTime? ConfirmedAt { get; set; }
     /// <summary>REGISTRANT_SELF_MATCH | EMAIL_CONFIRMATION | TRANSFER.</summary>
     public string? ConfirmationSource { get; set; }
+    /// <summary>True only when this contact IS a linked delegation member (NP-03) whose own
+    /// OrganizationPartnerId is set. Never derived from Organization text.</summary>
+    public bool IsOrganizationInSystem { get; set; }
 }
 
 public sealed class SubmittedCampusScheduleDto
@@ -172,6 +175,10 @@ public sealed class SubmittedGuestMemberDto
     public string MemberType { get; set; } = "";
     public string FullName { get; set; } = "";
     public string? Organization { get; set; }
+    /// <summary>Which partner profile this member's organization was picked from, or null for free
+    /// text (PART-01). Carried through so this legacy snapshot screen can show that an existing
+    /// Partner was chosen, matching what the registration read model already exposes.</summary>
+    public ulong? OrganizationPartnerId { get; set; }
     public string? JobTitle { get; set; }
     public string? Nationality { get; set; }
     public int DisplayOrder { get; set; }

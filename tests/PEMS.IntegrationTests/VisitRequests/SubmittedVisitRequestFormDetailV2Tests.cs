@@ -222,6 +222,113 @@ public sealed class SubmittedVisitRequestFormDetailV2Tests
         await tx.RollbackAsync();
     }
 
+    /// <summary>
+    /// PART-01: a guest member's chosen Partner (visit_guest_members.organization_partner_id) must
+    /// reach this flat submitted-snapshot DTO too — MapMemberRow used to silently drop it before
+    /// OrganizationPartnerId existed on SubmittedGuestMemberDto.
+    /// </summary>
+    [Fact]
+    public async Task GuestMember_partner_pick_reaches_the_dto()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, _) = await SeedV2(db, new[] { Campus1 }, mixed: false);
+
+        var partner = new PEMS.Domain.Entities.Partners.Partner
+        {
+            OwnerCampusId = Campus1,
+            Name = "Test Partner Co",
+            PartnerType = "COMPANY",
+            CooperationStatus = "ACTIVE",
+            ProfileStatus = "APPROVED",
+            Visibility = "PUBLIC",
+            CreatedAt = DateTime.Now,
+        };
+        db.Partners.Add(partner);
+        await db.SaveChangesAsync();
+
+        var member = await db.VisitGuestMembers.FirstAsync(
+            m => m.VisitRequestId == req.VisitRequestId && m.MemberType == "GUEST");
+        member.OrganizationPartnerId = partner.PartnerId;
+        await db.SaveChangesAsync();
+
+        var dto = await Run(db, Owner(), req.VisitRequestId);
+
+        var guest = Assert.Single(dto.GuestMembers, m => m.FullName == "A-guest0");
+        Assert.Equal(partner.PartnerId, guest.OrganizationPartnerId);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>A member who typed a free-text organization (no Partner picked) must read back null —
+    /// never a fabricated id.</summary>
+    [Fact]
+    public async Task GuestMember_without_partner_pick_has_null_OrganizationPartnerId()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, _) = await SeedV2(db, new[] { Campus1 }, mixed: false);
+        var dto = await Run(db, Owner(), req.VisitRequestId);
+
+        var guest = Assert.Single(dto.GuestMembers, m => m.FullName == "A-guest0");
+        Assert.Null(guest.OrganizationPartnerId);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>
+    /// Operational Contact "organization already in system" — governed by NP-03
+    /// (OperationalContactGuestMemberId → GuestMember.OrganizationPartnerId), never by text matching.
+    /// Full case coverage lives in PerCampusFormV2ReadTests; this pins the field through this handler's
+    /// own flat-snapshot mapping.
+    /// </summary>
+    [Fact]
+    public async Task OperationalContact_reports_organization_in_system_when_linked_member_has_a_partner()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, inst) = await SeedV2(db, new[] { Campus1 }, mixed: false);
+
+        var partner = new PEMS.Domain.Entities.Partners.Partner
+        {
+            OwnerCampusId = Campus1, Name = "Test Partner Co", PartnerType = "COMPANY",
+            CooperationStatus = "ACTIVE", ProfileStatus = "APPROVED", Visibility = "PUBLIC",
+            CreatedAt = DateTime.Now,
+        };
+        db.Partners.Add(partner);
+        await db.SaveChangesAsync();
+
+        var member = await db.VisitGuestMembers.FirstAsync(
+            m => m.VisitRequestId == req.VisitRequestId && m.MemberType == "GUEST");
+        member.OrganizationPartnerId = partner.PartnerId;
+        var detail = await db.VisitInstanceFormDetails.FirstAsync(d => d.VisitInstanceId == inst[0].VisitInstanceId);
+        detail.OperationalContactGuestMemberId = member.GuestMemberId;
+        await db.SaveChangesAsync();
+
+        var dto = await Run(db, Owner(), req.VisitRequestId);
+        var campus = Assert.Single(dto.Campuses);
+        Assert.True(campus.OperationalContact.IsOrganizationInSystem);
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task OperationalContact_no_badge_when_not_linked_to_any_delegation_member()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, _) = await SeedV2(db, new[] { Campus1 }, mixed: false);
+        var dto = await Run(db, Owner(), req.VisitRequestId);
+        var campus = Assert.Single(dto.Campuses);
+        Assert.False(campus.OperationalContact.IsOrganizationInSystem);
+        await tx.RollbackAsync();
+    }
+
     [Fact]
     public async Task V2_multi_nonmixed_derives_flat_from_detail()
     {

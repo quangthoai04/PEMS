@@ -128,6 +128,7 @@ public sealed class GetVisitInstanceSummaryQueryHandler : IRequestHandler<GetVis
             OperationalContactJobTitle = detail.OperationalContact.JobTitle,
             OperationalContactPhone = detail.OperationalContact.Phone,
             OperationalContactEmail = detail.OperationalContact.Email,
+            OperationalContactIsOrganizationInSystem = detail.OperationalContact.IsOrganizationInSystem,
 
             Campuses = visit.CampusInstances
                 .OrderBy(c => c.PlannedStartAt)
@@ -345,6 +346,7 @@ public sealed class GetVisitInstanceSummaryQueryHandler : IRequestHandler<GetVis
         MemberType = r.MemberType,
         FullName = r.FullName,
         Organization = r.Organization,
+        OrganizationPartnerId = r.OrganizationPartnerId,
         JobTitle = r.JobTitle,
         Nationality = r.Nationality,
         DisplayOrder = r.DisplayOrder,

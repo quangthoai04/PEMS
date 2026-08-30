@@ -184,6 +184,39 @@ describe('Working language — human-readable, locale-aware', () => {
   });
 });
 
+describe('Operational contact — organization partner badge', () => {
+  beforeEach(async () => { await act(async () => { await i18n.changeLanguage('vi'); }); });
+
+  it('shows the badge with its own wording when isOrganizationInSystem is true', () => {
+    render(
+      <VisitorVisitDetailPage
+        perm={PERM}
+        detail={buildDetail({
+          requestSummary: {
+            delegationName: 'x', visitScope: 'SINGLE_CAMPUS',
+            operationalContactOrganization: 'ĐH Bách Khoa', operationalContactIsOrganizationInSystem: true,
+          } as any,
+        })}
+      />,
+    );
+    expect(screen.getByText('✓ Tổ chức đã có trong hệ thống')).toBeInTheDocument();
+    expect(screen.getByText('ĐH Bách Khoa')).toBeInTheDocument();
+  });
+
+  it('shows no badge when isOrganizationInSystem is false/undefined', () => {
+    render(
+      <VisitorVisitDetailPage
+        perm={PERM}
+        detail={buildDetail({
+          requestSummary: { delegationName: 'x', visitScope: 'SINGLE_CAMPUS', operationalContactOrganization: 'ĐH Bách Khoa' } as any,
+        })}
+      />,
+    );
+    expect(screen.queryByText('✓ Tổ chức đã có trong hệ thống')).toBeNull();
+    expect(screen.getByText('ĐH Bách Khoa')).toBeInTheDocument();
+  });
+});
+
 describe('Agenda — responsible person', () => {
   beforeEach(async () => { await act(async () => { await i18n.changeLanguage('vi'); }); });
 

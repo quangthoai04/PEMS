@@ -924,6 +924,7 @@
     "confirmationSource": "Confirmation source",
     "confirmedAt": "Confirmed at",
     "unavailable": "Guest delegation contact information is not available",
+    "organizationInSystem": "✓ Organization already in the system",
     "status": {
       "pending": "Pending confirmation",
       "confirmed": "Confirmed",

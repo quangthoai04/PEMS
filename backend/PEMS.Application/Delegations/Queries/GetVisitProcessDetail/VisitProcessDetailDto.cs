@@ -106,6 +106,9 @@ public sealed class VisitProcessRequestSummaryDto
     public string? OperationalContactJobTitle { get; set; }
     public string? OperationalContactPhone { get; set; }
     public string? OperationalContactEmail { get; set; }
+    /// <summary>True only when this contact IS a linked delegation member (NP-03) whose own
+    /// OrganizationPartnerId is set. Never derived from Organization text.</summary>
+    public bool OperationalContactIsOrganizationInSystem { get; set; }
 
     public List<VisitProcessCampusDto> Campuses { get; set; } = new();
     public List<VisitProcessGuestMemberDto> GuestMembers { get; set; } = new();
@@ -129,6 +132,10 @@ public sealed class VisitProcessGuestMemberDto
     public string MemberType { get; set; } = default!;       // GUEST | EXTERNAL_SUPPORT
     public string FullName { get; set; } = default!;
     public string? Organization { get; set; }
+    /// <summary>Which partner profile this member's organization was picked from, or null for free
+    /// text (PART-01). Carried through so the process/summary/contribution screens can show that an
+    /// existing Partner was chosen, matching what the registration read model already exposes.</summary>
+    public ulong? OrganizationPartnerId { get; set; }
     public string? JobTitle { get; set; }
     public string? Nationality { get; set; }
     public int DisplayOrder { get; set; }

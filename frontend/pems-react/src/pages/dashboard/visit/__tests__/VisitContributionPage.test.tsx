@@ -85,6 +85,9 @@ const SUMMARY = {
     visitTypeOther: null as string | null,
     purpose: 'Hợp tác đào tạo',
     workingLanguage: 'EN',
+    operationalContactFullName: 'Đầu Mối HN' as string | null,
+    operationalContactOrganization: 'University of Queensland' as string | null,
+    operationalContactIsOrganizationInSystem: false as boolean | undefined,
   },
   agenda: [] as Array<{
     agendaId: number;
@@ -230,6 +233,27 @@ describe('VisitContributionPage — contribution stack promoted above reference 
 
     await waitFor(() => expect(screen.getByText('Loại chuyến thăm')).toBeInTheDocument());
     expect(screen.getByText('Khác')).toBeInTheDocument();
+  });
+
+  it('shows the operational contact partner badge when operationalContactIsOrganizationInSystem is true', async () => {
+    getContribution.mockResolvedValue(mockPage({
+      summary: { request: { ...SUMMARY.request, operationalContactIsOrganizationInSystem: true } },
+    }));
+    render(<VisitContributionPage />);
+
+    await waitFor(() => expect(screen.getByText('Đầu mối đoàn khách phối hợp tại cơ sở')).toBeInTheDocument());
+    expect(screen.getByText('✓ Tổ chức đã có trong hệ thống')).toBeInTheDocument();
+    // The organization text itself is still there (registrant + contact happen to share the same
+    // fixture value here, so it appears twice — once for each field), never replaced by the badge.
+    expect(screen.getAllByText('University of Queensland').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('shows no operational contact badge when operationalContactIsOrganizationInSystem is false', async () => {
+    getContribution.mockResolvedValue(mockPage()); // base fixture: operationalContactIsOrganizationInSystem = false
+    render(<VisitContributionPage />);
+
+    await waitFor(() => expect(screen.getByText('Đầu mối đoàn khách phối hợp tại cơ sở')).toBeInTheDocument());
+    expect(screen.queryByText('✓ Tổ chức đã có trong hệ thống')).not.toBeInTheDocument();
   });
 
   it('shows only ACCEPTED/ASSIGNED participants, hiding DECLINED/REMOVED/INVITED', async () => {

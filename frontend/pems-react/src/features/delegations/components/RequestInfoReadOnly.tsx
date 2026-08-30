@@ -6,6 +6,7 @@
  */
 import React from 'react';
 import type { VisitProcessRequestSummary, VisitProcessGuestMember } from '../types/delegations.types';
+import { PartnerSystemBadge } from '../../../shared/components/PartnerSystemBadge';
 
 const EMPTY = 'Chưa có thông tin';
 
@@ -92,7 +93,10 @@ function MembersTable({ members, emptyText }: { members: VisitProcessGuestMember
               <td className="px-2.5 py-1.5 text-gray-500">{i + 1}</td>
               <td className="px-2.5 py-1.5 font-medium text-gray-800">{m.fullName}</td>
               <td className="px-2.5 py-1.5 text-gray-600">{m.jobTitle || '—'}</td>
-              <td className="px-2.5 py-1.5 text-gray-600">{m.organization || '—'}</td>
+              <td className="px-2.5 py-1.5 text-gray-600">
+                {m.organization || '—'}
+                {m.organizationPartnerId != null && <PartnerSystemBadge strength="light" />}
+              </td>
               <td className="px-2.5 py-1.5 text-gray-600">{m.nationality || '—'}</td>
             </tr>
           ))}
@@ -162,7 +166,17 @@ export function DelegationInfoReadOnly({ summary }: { summary?: VisitProcessRequ
         </p>
         <div className="grid grid-cols-1 gap-x-10 md:grid-cols-2">
           <Field label="Họ và tên" value={summary?.operationalContactFullName} />
-          <Field label="Đơn vị công tác" value={summary?.operationalContactOrganization} />
+          <div className="flex gap-2 py-0.5 text-[13px] leading-5">
+            <span className="w-40 shrink-0 text-gray-500">Đơn vị công tác:</span>
+            <span className="min-w-0 break-words font-normal text-gray-800">
+              {summary?.operationalContactOrganization?.trim()
+                ? summary.operationalContactOrganization
+                : <span className="font-normal italic text-gray-400">{EMPTY}</span>}
+              {summary?.operationalContactIsOrganizationInSystem && (
+                <PartnerSystemBadge strength="light" label="✓ Tổ chức đã có trong hệ thống" />
+              )}
+            </span>
+          </div>
           <Field label="Chức vụ" value={summary?.operationalContactJobTitle} />
           <Field label="Số điện thoại" value={summary?.operationalContactPhone} />
           <Field label="Email" value={summary?.operationalContactEmail} />

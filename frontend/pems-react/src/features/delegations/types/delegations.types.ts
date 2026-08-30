@@ -591,6 +591,9 @@ export interface VisitProcessRequestSummary {
   operationalContactJobTitle?: string | null;
   operationalContactPhone?: string | null;
   operationalContactEmail?: string | null;
+  /** True only when the contact IS a linked delegation member (NP-03) whose own organization was
+   *  picked from an existing Partner. Never derived from operationalContactOrganization text. */
+  operationalContactIsOrganizationInSystem?: boolean;
 
   campuses: VisitProcessCampus[];
   guestMembers: VisitProcessGuestMember[];
@@ -611,6 +614,8 @@ export interface VisitProcessGuestMember {
   memberType: string;            // GUEST | EXTERNAL_SUPPORT
   fullName: string;
   organization?: string | null;
+  /** Which partner profile this member's organization was picked from, or null for free text (PART-01). */
+  organizationPartnerId?: number | null;
   jobTitle?: string | null;
   nationality?: string | null;
   displayOrder: number;
@@ -1331,6 +1336,9 @@ export interface SubmittedOperationalContact {
   confirmedAt?: string | null;
   /** REGISTRANT_SELF_MATCH | EMAIL_CONFIRMATION | TRANSFER. */
   confirmationSource?: string | null;
+  /** True only when the contact IS a linked delegation member (NP-03) whose own organization was
+   *  picked from an existing Partner. Never derived from `organization` text. */
+  isOrganizationInSystem?: boolean;
 }
 
 export interface SubmittedCampusSchedule {
@@ -1379,6 +1387,8 @@ export interface SubmittedGuestMember {
   memberType: string;
   fullName: string;
   organization?: string | null;
+  /** Which partner profile this member's organization was picked from, or null for free text (PART-01). */
+  organizationPartnerId?: number | null;
   jobTitle?: string | null;
   nationality?: string | null;
   displayOrder: number;

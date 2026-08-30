@@ -42,6 +42,7 @@
       "transportation": "Vehicle identification",
       "transportationEmpty": "No information yet",
       "operationalContact": "Coordination contact",
+      "operationalContactOrganizationInSystem": "✓ Organization already in the system",
       "purpose": "Purpose",
       "purposeEmpty": "No purpose provided.",
       "workingContent": "Working content",

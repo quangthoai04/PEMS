@@ -364,6 +364,14 @@ public sealed class ResolvedOperationalContactDto
     /// </para>
     /// </summary>
     public long? GuestMemberId { get; init; }
+
+    /// <summary>
+    /// True only when this contact IS a delegation member (<see cref="GuestMemberId"/> non-null) AND
+    /// that member's own <c>OrganizationPartnerId</c> is set — i.e. the SAME evidence
+    /// <see cref="ResolvedMemberDto.OrganizationPartnerId"/> carries for that member. Never derived by
+    /// matching <see cref="Organization"/> text against a Partner name.
+    /// </summary>
+    public bool IsOrganizationInSystem { get; init; }
 }
 
 /// <summary>

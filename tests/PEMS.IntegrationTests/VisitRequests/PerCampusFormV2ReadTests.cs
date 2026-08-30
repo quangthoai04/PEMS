@@ -287,6 +287,219 @@ public sealed class PerCampusFormV2ReadTests
         await tx.RollbackAsync();
     }
 
+    // ── Operational Contact "organization already in system" signal (NP-03 → OrganizationPartnerId) ──
+    // Governed entirely by VisitInstanceFormDetail.OperationalContactGuestMemberId →
+    // VisitGuestMember.OrganizationPartnerId — never by matching OperationalContactOrganization text.
+
+    [Fact]
+    public async Task OperationalContact_reports_organization_in_system_when_linked_member_has_a_partner()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, inst) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
+
+        var partner = new PEMS.Domain.Entities.Partners.Partner
+        {
+            OwnerCampusId = Campus1, Name = "Test Partner Co", PartnerType = "COMPANY",
+            CooperationStatus = "ACTIVE", ProfileStatus = "APPROVED", Visibility = "PUBLIC",
+            CreatedAt = DateTime.Now,
+        };
+        db.Partners.Add(partner);
+        await db.SaveChangesAsync();
+
+        var member = await db.VisitGuestMembers.FirstAsync(m => m.VisitRequestId == req.VisitRequestId);
+        member.OrganizationPartnerId = partner.PartnerId;
+        var detail = await db.VisitInstanceFormDetails.FirstAsync(d => d.VisitInstanceId == inst[0].VisitInstanceId);
+        detail.OperationalContactGuestMemberId = member.GuestMemberId;
+        await db.SaveChangesAsync();
+
+        var dto = await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+        var c = Assert.Single(dto.CampusVisits);
+        Assert.Equal((long)member.GuestMemberId, c.OperationalContact.GuestMemberId);
+        Assert.True(c.OperationalContact.IsOrganizationInSystem);
+
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task OperationalContact_no_badge_when_not_linked_to_any_delegation_member()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        // NewDetail() leaves OperationalContactGuestMemberId null by default (never set here).
+        var (req, _) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
+
+        var dto = await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+        var c = Assert.Single(dto.CampusVisits);
+        Assert.Null(c.OperationalContact.GuestMemberId);
+        Assert.False(c.OperationalContact.IsOrganizationInSystem);
+
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task OperationalContact_no_badge_when_linked_member_has_no_partner()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, inst) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
+        var member = await db.VisitGuestMembers.FirstAsync(m => m.VisitRequestId == req.VisitRequestId);
+        var detail = await db.VisitInstanceFormDetails.FirstAsync(d => d.VisitInstanceId == inst[0].VisitInstanceId);
+        detail.OperationalContactGuestMemberId = member.GuestMemberId; // linked — member has no partner
+        await db.SaveChangesAsync();
+
+        var dto = await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+        var c = Assert.Single(dto.CampusVisits);
+        Assert.NotNull(c.OperationalContact.GuestMemberId);
+        Assert.False(c.OperationalContact.IsOrganizationInSystem);
+
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>
+    /// The central anti-pattern this feature must never fall into: OperationalContactOrganization text
+    /// coincidentally matching a real Partner's name, with NO NP-03 relation, must never show the
+    /// badge. This is also exactly the state a Replace/Transfer leaves behind — both
+    /// ReplaceOperationalContactCommandHandler and AcceptOperationalContactConfirmationCommandHandler.
+    /// ApplyTransfer unconditionally null out OperationalContactGuestMemberId — so this test stands in
+    /// for that case at the read-projection level without re-driving the whole confirmation workflow.
+    /// </summary>
+    [Fact]
+    public async Task OperationalContact_organization_text_matching_a_partner_name_is_never_evidence()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, _) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
+
+        // NewDetail("A") sets OperationalContactOrganization = "OpOrg-A" — make a REAL partner share
+        // that exact name, but never link OperationalContactGuestMemberId to anyone.
+        var partner = new PEMS.Domain.Entities.Partners.Partner
+        {
+            OwnerCampusId = Campus1, Name = "OpOrg-A", PartnerType = "COMPANY",
+            CooperationStatus = "ACTIVE", ProfileStatus = "APPROVED", Visibility = "PUBLIC",
+            CreatedAt = DateTime.Now,
+        };
+        db.Partners.Add(partner);
+        await db.SaveChangesAsync();
+
+        var dto = await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+        var c = Assert.Single(dto.CampusVisits);
+        Assert.Equal("OpOrg-A", c.OperationalContact.Organization);
+        Assert.Null(c.OperationalContact.GuestMemberId);
+        Assert.False(c.OperationalContact.IsOrganizationInSystem);
+
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task OperationalContact_multicampus_never_leaks_a_siblings_partner()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, inst) = await SeedV2Async(db, new[] { Campus1, Campus2 }, mixed: true);
+
+        var partnerX = new PEMS.Domain.Entities.Partners.Partner
+        {
+            OwnerCampusId = Campus1, Name = "Partner X", PartnerType = "COMPANY",
+            CooperationStatus = "ACTIVE", ProfileStatus = "APPROVED", Visibility = "PUBLIC", CreatedAt = DateTime.Now,
+        };
+        db.Partners.Add(partnerX);
+        await db.SaveChangesAsync();
+
+        // Campus A's contact links to A-guest (has a partner); Campus B's contact links to B-guest
+        // (free text, no partner) — the two campuses must never share the answer.
+        var memberA = await db.VisitGuestMembers.FirstAsync(m => m.FullName == "A-guest");
+        memberA.OrganizationPartnerId = partnerX.PartnerId;
+        var detailA = await db.VisitInstanceFormDetails.FirstAsync(d => d.VisitInstanceId == inst[0].VisitInstanceId);
+        detailA.OperationalContactGuestMemberId = memberA.GuestMemberId;
+
+        var memberB = await db.VisitGuestMembers.FirstAsync(m => m.FullName == "B-guest");
+        var detailB = await db.VisitInstanceFormDetails.FirstAsync(d => d.VisitInstanceId == inst[1].VisitInstanceId);
+        detailB.OperationalContactGuestMemberId = memberB.GuestMemberId;
+        await db.SaveChangesAsync();
+
+        var dto = await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+        var campusA = dto.CampusVisits.Single(c => c.VisitInstanceId == (long)inst[0].VisitInstanceId);
+        var campusB = dto.CampusVisits.Single(c => c.VisitInstanceId == (long)inst[1].VisitInstanceId);
+
+        Assert.True(campusA.OperationalContact.IsOrganizationInSystem);
+        Assert.False(campusB.OperationalContact.IsOrganizationInSystem);
+
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>
+    /// A legacy VisitGuestMember shared by two campuses before copy-on-write splits it (see
+    /// GuestPartnerLinkResolver.cs's own doc on this state). Both campuses correctly show the SAME
+    /// badge, because it genuinely is the same person/partner until an edit copies the row.
+    /// </summary>
+    [Fact]
+    public async Task OperationalContact_shared_legacy_member_before_COW_shows_on_both_campuses()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var req = NewRequest(FormSchemaVersions.PerCampus, "MULTI_CAMPUS", mixed: false);
+        var instA = NewInstance(Campus1);
+        instA.FormDetail = NewDetail("A");
+        var instB = NewInstance(Campus2);
+        instB.FormDetail = NewDetail("B");
+        req.CampusInstances.Add(instA);
+        req.CampusInstances.Add(instB);
+        db.VisitRequests.Add(req);
+        await db.SaveChangesAsync();
+
+        var partner = new PEMS.Domain.Entities.Partners.Partner
+        {
+            OwnerCampusId = Campus1, Name = "Shared Partner", PartnerType = "COMPANY",
+            CooperationStatus = "ACTIVE", ProfileStatus = "APPROVED", Visibility = "PUBLIC", CreatedAt = DateTime.Now,
+        };
+        db.Partners.Add(partner);
+        await db.SaveChangesAsync();
+        var sharedMember = NewMember(req.VisitRequestId, "Shared-guest");
+        sharedMember.OrganizationPartnerId = partner.PartnerId;
+        db.VisitGuestMembers.Add(sharedMember);
+        await db.SaveChangesAsync();
+
+        db.VisitInstanceGuestMembers.Add(new VisitInstanceGuestMember
+        {
+            VisitRequestId = req.VisitRequestId, VisitInstanceId = instA.VisitInstanceId,
+            GuestMemberId = sharedMember.GuestMemberId, DisplayOrder = 0, CreatedAt = DateTime.Now,
+        });
+        db.VisitInstanceGuestMembers.Add(new VisitInstanceGuestMember
+        {
+            VisitRequestId = req.VisitRequestId, VisitInstanceId = instB.VisitInstanceId,
+            GuestMemberId = sharedMember.GuestMemberId, DisplayOrder = 0, CreatedAt = DateTime.Now,
+        });
+        await db.SaveChangesAsync();
+
+        var detailA = await db.VisitInstanceFormDetails.FirstAsync(d => d.VisitInstanceId == instA.VisitInstanceId);
+        var detailB = await db.VisitInstanceFormDetails.FirstAsync(d => d.VisitInstanceId == instB.VisitInstanceId);
+        detailA.OperationalContactGuestMemberId = sharedMember.GuestMemberId;
+        detailB.OperationalContactGuestMemberId = sharedMember.GuestMemberId;
+        await db.SaveChangesAsync();
+
+        var dto = await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+        var campusA = dto.CampusVisits.Single(c => c.VisitInstanceId == (long)instA.VisitInstanceId);
+        var campusB = dto.CampusVisits.Single(c => c.VisitInstanceId == (long)instB.VisitInstanceId);
+
+        Assert.True(campusA.OperationalContact.IsOrganizationInSystem);
+        Assert.True(campusB.OperationalContact.IsOrganizationInSystem);
+
+        await tx.RollbackAsync();
+    }
+
     [Fact]
     public async Task V2_multi_campus_mixed_keeps_each_campus_independent()
     {

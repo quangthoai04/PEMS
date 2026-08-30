@@ -24,6 +24,7 @@ import type {
 } from '../../../features/delegations/types/delegations.types';
 import { toVietnamDateTimeLocalInput } from '../../../shared/utils/vietnamTime';
 import { useAuth } from '../../../shared/hooks/useAuth';
+import { PartnerSystemBadge } from '../../../shared/components/PartnerSystemBadge';
 
 const INSTANCE_STATUS_LABELS: Record<string, string> = {
   WAITING_REQUEST_APPROVAL: 'Chờ xử lý tại cơ sở',
@@ -347,7 +348,19 @@ export function VisitContributionPage() {
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-2">
                 <Field label="Họ và tên" value={req.operationalContactFullName} />
-                <Field label="Đơn vị công tác" value={req.operationalContactOrganization} />
+                <Field
+                  label="Đơn vị công tác"
+                  value={
+                    req.operationalContactIsOrganizationInSystem
+                      ? (
+                        <>
+                          {req.operationalContactOrganization}
+                          <PartnerSystemBadge strength="light" label="✓ Tổ chức đã có trong hệ thống" />
+                        </>
+                      )
+                      : req.operationalContactOrganization
+                  }
+                />
                 <Field label="Chức vụ" value={req.operationalContactJobTitle} />
                 <Field label="Số điện thoại" value={req.operationalContactPhone} />
                 <Field label="Email" value={req.operationalContactEmail} />

@@ -42,6 +42,7 @@
       "transportation": "Nhận diện phương tiện",
       "transportationEmpty": "Chưa có thông tin",
       "operationalContact": "Đầu mối phối hợp",
+      "operationalContactOrganizationInSystem": "✓ Tổ chức đã có trong hệ thống",
       "purpose": "Mục đích",
       "purposeEmpty": "Chưa có mục đích.",
       "workingContent": "Nội dung làm việc",

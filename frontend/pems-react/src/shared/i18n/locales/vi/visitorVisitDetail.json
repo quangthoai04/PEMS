@@ -103,7 +103,8 @@
     "organization": "Đơn vị công tác",
     "jobTitle": "Chức vụ",
     "phone": "Số điện thoại",
-    "email": "Email"
+    "email": "Email",
+    "organizationInSystem": "✓ Tổ chức đã có trong hệ thống"
   },
   "externalSupport": {
     "title": "Danh sách hỗ trợ đoàn"

@@ -120,6 +120,96 @@ describe('CampusVisitDetailCard', () => {
   });
 });
 
+// ── Partner-in-system badge: light note next to a member's organization ─────────
+describe('CampusVisitDetailCard — organization partner badge (light, member-level)', () => {
+  it('shows the light "already in the system" note when the member has a picked partner', () => {
+    render(<CampusVisitDetailCard campus={campusFixture({
+      visitors: [{
+        guestMemberId: 1, memberType: 'VISITOR', fullName: 'Khách Một', organization: 'ĐH ABC',
+        organizationPartnerId: 42, jobTitle: 'GV', nationality: 'VN', displayOrder: 1,
+      }],
+    })} />);
+
+    const visitors = screen.getByTestId('campus-visitors-10');
+    // Both the desktop table row and the mobile card render the badge — assert at least one shows.
+    expect(within(visitors).getAllByText('✓ Already in the system').length).toBeGreaterThan(0);
+  });
+
+  it('shows no badge for a free-text organization (no partner picked)', () => {
+    render(<CampusVisitDetailCard campus={campusFixture()} />); // fixture's visitor has no organizationPartnerId
+
+    const visitors = screen.getByTestId('campus-visitors-10');
+    expect(within(visitors).queryByText('✓ Already in the system')).not.toBeInTheDocument();
+  });
+});
+
+// ── Partner-in-system badge: Operational Contact (light, NP-03 relation only) ───
+// Own wording, distinct from the generic "✓ Already in the system" Guest/Support badge above — the
+// claim is narrower ("this organization" vs "was picked from the partner list"), so it must never be
+// confused with the shared orgKnown text at the DOM level either.
+describe('CampusVisitDetailCard — operational contact organization partner badge', () => {
+  const BADGE_TEXT = '✓ Organization already in the system';
+
+  it('shows its own-wording light badge when isOrganizationInSystem is true', () => {
+    render(<CampusVisitDetailCard campus={campusFixture({
+      operationalContact: {
+        fullName: 'Đầu Mối HN', organization: 'ĐH ABC', jobTitle: 'Trưởng phòng',
+        phone: '+84912345678', email: 'dm@x.vn',
+        confirmationStatus: 'CONFIRMED', confirmationSource: 'EMAIL_CONFIRMATION',
+        confirmedAt: '2026-08-01T09:00:00', guestMemberId: 1, isOrganizationInSystem: true,
+      },
+    })} />);
+
+    expect(screen.getByText(BADGE_TEXT)).toBeInTheDocument();
+    // Never the generic Guest/Support wording — the two badges must stay textually distinct.
+    expect(screen.queryByText('✓ Already in the system')).not.toBeInTheDocument();
+  });
+
+  it('shows no badge when isOrganizationInSystem is false (not linked / linked member has no partner)', () => {
+    render(<CampusVisitDetailCard campus={campusFixture()} />); // fixture's contact has no isOrganizationInSystem
+
+    expect(screen.queryByText(BADGE_TEXT)).not.toBeInTheDocument();
+  });
+
+  it('shows no badge when isOrganizationInSystem is undefined — old data, no crash', () => {
+    render(<CampusVisitDetailCard campus={campusFixture({
+      operationalContact: {
+        fullName: 'Đầu Mối HN', organization: 'ĐH ABC', jobTitle: 'Trưởng phòng',
+        phone: '+84912345678', email: 'dm@x.vn',
+        confirmationStatus: 'CONFIRMED', confirmationSource: 'EMAIL_CONFIRMATION',
+        confirmedAt: '2026-08-01T09:00:00',
+      },
+    })} />);
+
+    expect(screen.queryByText(BADGE_TEXT)).not.toBeInTheDocument();
+    // Organization text itself still renders fine, unaffected by the missing field.
+    expect(screen.getByTestId('operational-contact-10-organization')).toHaveTextContent('ĐH ABC');
+  });
+
+  it('does not overlap or replace a very long organization name, and stays on its own line', () => {
+    const longName = 'Công ty TNHH Một Thành Viên ABC International Technology and Trading Corporation Very Long Name Edge Case';
+    render(<CampusVisitDetailCard campus={campusFixture({
+      operationalContact: {
+        fullName: 'Đầu Mối HN', organization: longName, jobTitle: 'Trưởng phòng',
+        phone: '+84912345678', email: 'dm@x.vn',
+        confirmationStatus: 'CONFIRMED', confirmationSource: 'EMAIL_CONFIRMATION',
+        confirmedAt: '2026-08-01T09:00:00', guestMemberId: 1, isOrganizationInSystem: true,
+      },
+    })} />);
+
+    // Full name still present verbatim — never truncated/hidden to make room for the badge.
+    const orgCell = screen.getByTestId('operational-contact-10-organization');
+    expect(orgCell).toHaveTextContent(longName);
+    const badge = screen.getByText(BADGE_TEXT);
+    expect(orgCell).toContainElement(badge);
+    // The badge carries the `block` utility (never inline with the name), so it can never visually
+    // overlap or run into the text it follows regardless of how long that text is. Asserted via the
+    // class itself (Tailwind's stylesheet is not loaded in this jsdom test environment, so
+    // getComputedStyle would not reflect it).
+    expect(badge).toHaveClass('block');
+  });
+});
+
 // ── One note, one consent answer ─────────────────────────────────────────────
 /**
  * The consent row used to append the media note after an em dash — "Agreed — <note>" — which read

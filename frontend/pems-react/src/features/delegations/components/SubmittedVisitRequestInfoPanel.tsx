@@ -16,6 +16,7 @@ import type {
   SubmittedGuestMember,
 } from '../types/delegations.types';
 import { VISIT_SCOPE_LABELS, INSTANCE_STATUS_LABELS } from '../types/delegations.types';
+import { PartnerSystemBadge } from '../../../shared/components/PartnerSystemBadge';
 
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 const formatDateTime = (value?: string | null) => {
@@ -86,7 +87,10 @@ const MemberTable = ({ members, emptyText }: { members: SubmittedGuestMember[]; 
               <td className="px-2.5 py-1.5 text-center text-slate-400">{i + 1}</td>
               <td className="px-2.5 py-1.5 font-medium text-slate-800">{m.fullName || '-'}</td>
               <td className="px-2.5 py-1.5 text-slate-600">{m.jobTitle || '-'}</td>
-              <td className="px-2.5 py-1.5 text-slate-600">{m.organization || '-'}</td>
+              <td className="px-2.5 py-1.5 text-slate-600">
+                {m.organization || '-'}
+                {m.organizationPartnerId != null && <PartnerSystemBadge strength="light" />}
+              </td>
               <td className="px-2.5 py-1.5 text-slate-600">{m.nationality || '-'}</td>
             </tr>
           ))}
@@ -267,7 +271,15 @@ export function SubmittedVisitRequestInfoPanel({
                 )}
                 <div className="grid grid-cols-1 gap-x-10 md:grid-cols-2">
                   <KV label="Họ và tên" value={campus.operationalContact?.fullName} />
-                  <KV label="Đơn vị công tác" value={campus.operationalContact?.organization} />
+                  <div className="flex gap-2 py-0.5 text-[13px] leading-5">
+                    <span className="w-36 shrink-0 text-slate-500">Đơn vị công tác:</span>
+                    <span className="min-w-0 font-normal text-slate-800 break-words">
+                      {campus.operationalContact?.organization?.trim() || '-'}
+                      {campus.operationalContact?.isOrganizationInSystem && (
+                        <PartnerSystemBadge strength="light" label="✓ Tổ chức đã có trong hệ thống" />
+                      )}
+                    </span>
+                  </div>
                   <KV label="Chức vụ" value={campus.operationalContact?.jobTitle} />
                   <KV label="Số điện thoại" value={campus.operationalContact?.phone} />
                   <KV label="Email" value={campus.operationalContact?.email} />

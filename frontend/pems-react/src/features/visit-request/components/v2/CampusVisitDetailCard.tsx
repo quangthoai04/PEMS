@@ -196,6 +196,7 @@ export const CampusVisitDetailCard: React.FC<Props> = ({
             fullName: m.fullName,
             jobTitle: m.jobTitle,
             organization: m.organization,
+            organizationPartnerId: m.organizationPartnerId,
             nationality: m.nationality,
           }))}
           emptyMessage={t('visitRequestV2:person.noVisitors')}
@@ -209,6 +210,7 @@ export const CampusVisitDetailCard: React.FC<Props> = ({
             fullName: m.fullName,
             jobTitle: m.jobTitle,
             organization: m.organization,
+            organizationPartnerId: m.organizationPartnerId,
             nationality: m.nationality,
           }))}
           emptyMessage={t('visitRequestV2:person.noSupport')}

@@ -1,5 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { PartnerSystemBadge } from '../../../../../shared/components/PartnerSystemBadge';
 
 export interface PersonRow {
   /** Stable key from the backend; the index is used only as a last resort. */
@@ -7,6 +8,9 @@ export interface PersonRow {
   fullName: string;
   jobTitle?: string | null;
   organization?: string | null;
+  /** Which partner profile `organization` was picked from, or null/undefined for free text
+   *  (PART-01) — drives the light "✓ Có trong hệ thống" note next to the organization. */
+  organizationPartnerId?: number | null;
   nationality?: string | null;
 }
 
@@ -74,7 +78,10 @@ export const PersonListTable: React.FC<Props> = ({
                     <td className="px-2.5 py-2 text-slate-500">{index + 1}</td>
                     <td className="px-2.5 py-2 font-semibold text-slate-800">{row.fullName || EMPTY}</td>
                     <td className="px-2.5 py-2 text-slate-600">{row.jobTitle || EMPTY}</td>
-                    <td className="px-2.5 py-2 text-slate-600">{row.organization || EMPTY}</td>
+                    <td className="px-2.5 py-2 text-slate-600">
+                      {row.organization || EMPTY}
+                      {row.organizationPartnerId != null && <PartnerSystemBadge strength="light" />}
+                    </td>
                     <td className="px-2.5 py-2 text-slate-600">{row.nationality || EMPTY}</td>
                     {renderActions && <td className="px-2.5 py-2">{renderActions(row, index)}</td>}
                   </tr>
@@ -96,16 +103,21 @@ export const PersonListTable: React.FC<Props> = ({
                   </span>
                 </div>
                 <dl className="mt-1.5 space-y-0.5 text-[13px]">
-                  {([
-                    ['visitRequestV2:person.jobTitle', row.jobTitle],
-                    ['visitRequestV2:person.organization', row.organization],
-                    ['visitRequestV2:person.nationality', row.nationality],
-                  ] as const).map(([labelKey, value]) => (
-                    <div key={labelKey} className="flex gap-2">
-                      <dt className="shrink-0 text-slate-500">{t(labelKey)}:</dt>
-                      <dd className="min-w-0 break-words text-slate-700">{value || EMPTY}</dd>
-                    </div>
-                  ))}
+                  <div className="flex gap-2">
+                    <dt className="shrink-0 text-slate-500">{t('visitRequestV2:person.jobTitle')}:</dt>
+                    <dd className="min-w-0 break-words text-slate-700">{row.jobTitle || EMPTY}</dd>
+                  </div>
+                  <div className="flex gap-2">
+                    <dt className="shrink-0 text-slate-500">{t('visitRequestV2:person.organization')}:</dt>
+                    <dd className="min-w-0 break-words text-slate-700">
+                      {row.organization || EMPTY}
+                      {row.organizationPartnerId != null && <PartnerSystemBadge strength="light" />}
+                    </dd>
+                  </div>
+                  <div className="flex gap-2">
+                    <dt className="shrink-0 text-slate-500">{t('visitRequestV2:person.nationality')}:</dt>
+                    <dd className="min-w-0 break-words text-slate-700">{row.nationality || EMPTY}</dd>
+                  </div>
                 </dl>
                 {renderActions && <div className="mt-2">{renderActions(row, index)}</div>}
               </li>

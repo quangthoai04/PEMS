@@ -46,6 +46,13 @@ public sealed class VisitFormOperationalContact
     public string? JobTitle { get; init; }
     public string? Phone { get; init; }
     public string? Email { get; init; }
+    /// <summary>
+    /// True only when this contact IS a delegation member (NP-03 — see
+    /// <c>VisitInstanceFormDetail.OperationalContactGuestMemberId</c>) AND that member's own
+    /// <c>OrganizationPartnerId</c> is set. Never derived from the <see cref="Organization"/> text —
+    /// a name coincidentally matching a Partner proves nothing about this contact.
+    /// </summary>
+    public bool IsOrganizationInSystem { get; init; }
 }
 
 /// <summary>A guest / external-support member row, already resolved to the campus that should show it.</summary>

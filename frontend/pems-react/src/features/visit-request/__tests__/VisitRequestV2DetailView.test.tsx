@@ -751,3 +751,22 @@ describe('VisitRequestV2DetailView', () => {
     expect(getVisitRequestFormV2).toHaveBeenCalledTimes(1);
   });
 });
+
+// ── Partner-in-system badge: strong pill next to the REGISTRANT's organization ──
+describe('VisitRequestV2DetailView — registrant partner badge (strong, request-level)', () => {
+  it('shows the strong "existing partner" badge when the request has a picked partner', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({ partnerId: 42 }));
+    render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+
+    const section = await screen.findByTestId('section-registrant');
+    expect(within(section).getByText('An existing partner is selected')).toBeInTheDocument();
+  });
+
+  it('shows no badge when the registrant organization is free text (no partner picked)', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture()); // partnerId: null in the base fixture
+    render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+
+    const section = await screen.findByTestId('section-registrant');
+    expect(within(section).queryByText('An existing partner is selected')).not.toBeInTheDocument();
+  });
+});

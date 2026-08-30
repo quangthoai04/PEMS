@@ -156,8 +156,11 @@ const CAMPUS_STATUS_LABELS: Record<string, string> = {
 // Visitor reads AFTER_VISIT as "Chờ đánh giá" (their own feedback, still owed) instead of the
 // staff-facing "Chờ đóng" — same split as getStatusBadge's afterLabel, applied to the per-campus
 // accordion row so a multi-campus Visitor sees consistent wording between summary and detail.
-const getCampusStatusLabel = (status?: string | null, isVisitorView?: boolean) =>
-  (status === 'AFTER_VISIT' && isVisitorView)
+// Once THIS instance's feedback is already submitted, "Chờ đánh giá" would contradict the
+// "Đã đánh giá" badge shown right next to it (Slot 4) — so it falls back to the staff-facing
+// wording, which stays true regardless of the visitor's own submission state.
+const getCampusStatusLabel = (status?: string | null, isVisitorView?: boolean, alreadySubmitted?: boolean) =>
+  (status === 'AFTER_VISIT' && isVisitorView && !alreadySubmitted)
     ? 'Chờ đánh giá'
     : (status && CAMPUS_STATUS_LABELS[status]) || status || '-';
 // Maps the same codes to the bilingual statusBadge.* i18n keys, for EN rendering of the campus accordion.
@@ -1964,11 +1967,33 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     // AFTER_VISIT reads differently for Visitor ("Chờ đánh giá" — the feedback they still owe)
     // than for every other role ("Chờ đóng" — the paperwork staff still owe). Both keep the same
     // `kind`/color/routing; only the two i18n keys they read from differ, same pattern as cancelledText.
+    //
+    // "Chờ đánh giá" is only accurate while the Visitor has NOT yet submitted their own feedback —
+    // `feedbackByInstance` (same source as the Slot 4 / row-primary-action feedback badge) already
+    // knows that per instance, so it is consulted here too instead of reading `kind` alone, which
+    // otherwise stayed "Chờ đánh giá" forever once the campus entered AFTER_VISIT even after the
+    // visitor had already rated it — contradicting the "Đã đánh giá" badge shown right next to it.
+    // For a multi-campus rollup row (no own visitInstanceId), every AFTER_VISIT sibling is checked:
+    // if ANY of them still needs the visitor's feedback, the row still legitimately says so.
+    const stillOwesFeedback = (instanceId?: number | null) => {
+      if (!instanceId) return true; // unknown → conservative default, never hide a real prompt
+      const fb = feedbackByInstance[instanceId];
+      return !fb || !fb.alreadySubmitted;
+    };
+    const afterVisitorPending = kind !== 'after' ? false : (() => {
+      const afterInstanceIds = (row.campusProgressItems || [])
+        .filter((cp) => cp.instanceStatus === 'AFTER_VISIT')
+        .map((cp) => cp.visitInstanceId);
+      const idsToCheck = afterInstanceIds.length > 0
+        ? afterInstanceIds
+        : (row.visitInstanceId ? [row.visitInstanceId] : []);
+      return idsToCheck.length === 0 || idsToCheck.some(stillOwesFeedback);
+    })();
     const afterLabel = isVisitor
-      ? tt('visitRequestV2:list.statusBadge.afterVisitor.label')
+      ? tt(afterVisitorPending ? 'visitRequestV2:list.statusBadge.afterVisitor.label' : 'visitRequestV2:list.statusBadge.after.label')
       : tt('visitRequestV2:list.statusBadge.after.label');
     const afterTitle = isVisitor
-      ? tt('visitRequestV2:list.statusBadge.afterVisitor.title')
+      ? tt(afterVisitorPending ? 'visitRequestV2:list.statusBadge.afterVisitor.title' : 'visitRequestV2:list.statusBadge.after.title')
       : tt('visitRequestV2:list.statusBadge.after.title');
 
     const labelByKind: Record<StatusKind, string> = {
@@ -2438,7 +2463,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                 : item.instanceStatus === 'AFTER_VISIT'
                   ? 'after'
                   : 'before',
-            status: getCampusStatusLabel(item.instanceStatus, isVisitor),
+            status: getCampusStatusLabel(item.instanceStatus, isVisitor, feedbackByInstance[item.visitInstanceId]?.alreadySubmitted),
             isReadOnly: isHO || isStaffLeaderNotHost || item.instanceStatus === 'CLOSED',
           },
         });
@@ -2534,13 +2559,20 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
                 {/* Status Column */}
                 <div className="lg:py-1 lg:px-3 lg:flex lg:justify-center mt-2 lg:mt-0">
-                  <span className={`inline-flex justify-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-bold ${getCampusStatusBadgeClass(item.instanceStatus)}`}>
-                    {isEnglish && item.instanceStatus && CAMPUS_STATUS_KIND[item.instanceStatus]
-                      ? tt(`visitRequestV2:list.statusBadge.${
-                          item.instanceStatus === 'AFTER_VISIT' && isVisitor ? 'afterVisitor' : CAMPUS_STATUS_KIND[item.instanceStatus]
-                        }.label`)
-                      : getCampusStatusLabel(item.instanceStatus, isVisitor)}
-                  </span>
+                  {(() => {
+                    // Same instance the Slot 4 feedback badge below reads — kept in sync so the two
+                    // badges on this row never contradict each other ("Chờ đánh giá" next to "Đã đánh giá").
+                    const alreadySubmitted = feedbackByInstance[item.visitInstanceId]?.alreadySubmitted;
+                    return (
+                      <span className={`inline-flex justify-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-bold ${getCampusStatusBadgeClass(item.instanceStatus)}`}>
+                        {isEnglish && item.instanceStatus && CAMPUS_STATUS_KIND[item.instanceStatus]
+                          ? tt(`visitRequestV2:list.statusBadge.${
+                              item.instanceStatus === 'AFTER_VISIT' && isVisitor && !alreadySubmitted ? 'afterVisitor' : CAMPUS_STATUS_KIND[item.instanceStatus]
+                            }.label`)
+                          : getCampusStatusLabel(item.instanceStatus, isVisitor, alreadySubmitted)}
+                      </span>
+                    );
+                  })()}
                 </div>
 
                 {/* Actions Column — four slots, none of them wasted (§12):

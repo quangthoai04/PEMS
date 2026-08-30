@@ -13,6 +13,7 @@ import { vi, enUS } from 'date-fns/locale';
 import { VisitFeedbackModal } from '../../../features/feedbacks/components/VisitFeedbackModal';
 import { resolveNotificationPresentation } from '../../../features/notifications/utils/resolveNotificationPresentation';
 import type { UiLanguage } from '../../../shared/utils/vietnamTime';
+import { PartnerSystemBadge } from '../../../shared/components/PartnerSystemBadge';
 
 /** Visitor-only page (never rendered for Staff/HO/Department) — full bilingual, no role scoping needed. */
 function useDateLocale() {
@@ -417,7 +418,19 @@ function VisitorOperationalContactSection({ summary }: { summary: any }) {
       <SectionTitle>{t('operationalContact.title')}</SectionTitle>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10">
         <KV label={t('operationalContact.fullName')} value={summary.operationalContactFullName} />
-        <KV label={t('operationalContact.organization')} value={summary.operationalContactOrganization} />
+        <KV
+          label={t('operationalContact.organization')}
+          value={
+            summary.operationalContactIsOrganizationInSystem
+              ? (
+                <>
+                  {summary.operationalContactOrganization}
+                  <PartnerSystemBadge strength="light" label={t('operationalContact.organizationInSystem')} />
+                </>
+              )
+              : summary.operationalContactOrganization
+          }
+        />
         <KV label={t('operationalContact.jobTitle')} value={summary.operationalContactJobTitle} />
         <KV label={t('operationalContact.phone')} value={summary.operationalContactPhone} />
         <KV label={t('operationalContact.email')} value={summary.operationalContactEmail} />

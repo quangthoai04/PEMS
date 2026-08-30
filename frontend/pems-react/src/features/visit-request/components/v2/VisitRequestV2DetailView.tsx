@@ -21,6 +21,7 @@ import { VisitActionButton } from './shared/VisitActionButton';
 import { capabilityFor, hasAction, VisitV2Action } from '../../utils/visitV2Actions';
 import { formatVietnamDateTime } from '../../../../shared/utils/vietnamTime';
 import { showSuccessToast } from '../../../../shared/utils/toast';
+import { PartnerSystemBadge } from '../../../../shared/components/PartnerSystemBadge';
 import { VisitSectionCard } from './shared/VisitSectionCard';
 import { VisitStatusBadge } from './shared/VisitStatusBadge';
 import { ReadOnlyInfoGrid } from './shared/ReadOnlyInfoGrid';
@@ -360,7 +361,17 @@ export default function VisitRequestV2DetailView({ visitRequestId, focusInstance
         <ReadOnlyInfoGrid
           rows={[
             { label: t('visitRequestV2:registrant.fullName'), value: data.registrant.fullName },
-            { label: t('visitRequestV2:registrant.organization'), value: data.registrant.organization },
+            {
+              label: t('visitRequestV2:registrant.organization'),
+              value: data.partnerId != null
+                ? (
+                  <>
+                    {data.registrant.organization}
+                    <PartnerSystemBadge strength="strong" className="mt-1" />
+                  </>
+                )
+                : data.registrant.organization,
+            },
             { label: t('visitRequestV2:registrant.jobTitle'), value: data.registrant.jobTitle },
             { label: t('visitRequestV2:card.phone'), value: data.registrant.phone },
             { label: t('visitRequestV2:registrant.nationality'), value: data.registrant.nationality },

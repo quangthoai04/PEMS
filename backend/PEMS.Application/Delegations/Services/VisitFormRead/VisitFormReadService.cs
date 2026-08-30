@@ -263,6 +263,17 @@ public sealed class VisitFormReadService : IVisitFormReadService
                 transportationNote = d.TransportationNote;
                 mediaStatus = d.MediaConsentStatus;
                 notes = d.Notes;
+
+                // Whether this campus's contact IS a delegation member with a picked Partner — read
+                // from the SAME per-campus member list built below (membersByInstance), never from a
+                // fresh query and never from Organization text. Looked up here, before `linked` is
+                // (re)computed for Visitors/SupportMembers just below, using the identical source.
+                var contactMembers = membersByInstance.TryGetValue(c.VisitInstanceId, out var cms)
+                    ? cms : new List<(VisitGuestMember Member, uint LinkOrder)>();
+                bool isOrgInSystem = d.OperationalContactGuestMemberId is ulong contactGmId
+                    && contactMembers.FirstOrDefault(x => x.Member.GuestMemberId == contactGmId).Member
+                        is { OrganizationPartnerId: not null };
+
                 opContact = new ResolvedOperationalContactDto
                 {
                     FullName = d.OperationalContactFullName,
@@ -280,6 +291,7 @@ public sealed class VisitFormReadService : IVisitFormReadService
                     // restores its "Đầu mối là ai trong đoàn?" selection from this: without it, reopening
                     // a request would show the picker empty and quietly drop a link the user had made.
                     GuestMemberId = d.OperationalContactGuestMemberId is ulong gm ? (long)gm : null,
+                    IsOrganizationInSystem = isOrgInSystem,
                 };
                 formRevision = d.FormRevision;
                 approvalRevision = d.ApprovalRevision;
@@ -969,6 +981,14 @@ public sealed class VisitFormReadService : IVisitFormReadService
             }
 
             var linked = membersByInstance.TryGetValue(instanceId, out var ms) ? ms : new List<VisitGuestMember>();
+
+            // Same rule as ResolveAsync's ResolvedOperationalContactDto.IsOrganizationInSystem: the
+            // contact must BE a linked delegation member of THIS instance, and that member must carry
+            // an OrganizationPartnerId. Reuses `linked` — no extra query, no name matching.
+            var contactMember = d.OperationalContactGuestMemberId is ulong contactGmId
+                ? linked.FirstOrDefault(m => m.GuestMemberId == contactGmId)
+                : null;
+
             result[instanceId] = new VisitCampusFormContent
             {
                 DelegationName = d.DelegationName,
@@ -986,7 +1006,8 @@ public sealed class VisitFormReadService : IVisitFormReadService
                     Organization = d.OperationalContactOrganization,
                     JobTitle = d.OperationalContactJobTitle,
                     Phone = d.OperationalContactPhone,
-                    Email = d.OperationalContactEmail
+                    Email = d.OperationalContactEmail,
+                    IsOrganizationInSystem = contactMember?.OrganizationPartnerId is not null,
                 },
                 Visitors = linked.Where(m => m.MemberType != ExternalSupport).Select(ToRow).ToList(),
                 SupportMembers = linked.Where(m => m.MemberType == ExternalSupport).Select(ToRow).ToList(),

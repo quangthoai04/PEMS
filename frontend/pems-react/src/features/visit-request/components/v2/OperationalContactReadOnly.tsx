@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 
 import { formatVietnamDateTime } from '../../../../shared/utils/vietnamTime';
+import { PartnerSystemBadge } from '../../../../shared/components/PartnerSystemBadge';
 import type { ResolvedOperationalContact } from '../../api/visitRequestV2Api';
 
 interface Props {
@@ -89,11 +90,21 @@ export function OperationalContactReadOnly({
             value={contact.fullName}
             testId={tid('full-name')}
           />
-          <Field
-            label={t('visitRequestV2:operationalContact.organization')}
-            value={contact.organization}
-            testId={tid('organization')}
-          />
+          <div className="min-w-0">
+            <dt className="text-xs font-medium text-slate-500">
+              {t('visitRequestV2:operationalContact.organization')}
+            </dt>
+            <dd className="break-words text-sm text-slate-900" data-testid={tid('organization')}>
+              {contact.organization && contact.organization.trim().length > 0 ? contact.organization : '—'}
+              {contact.isOrganizationInSystem && (
+                <PartnerSystemBadge
+                  strength="light"
+                  label={t('visitRequestV2:operationalContact.organizationInSystem')}
+                  data-testid={tid('organization-partner-badge')}
+                />
+              )}
+            </dd>
+          </div>
           <Field
             label={t('visitRequestV2:operationalContact.jobTitle')}
             value={contact.jobTitle}

@@ -252,6 +252,12 @@ export interface ResolvedOperationalContact {
    * request that predates the link. The edit form restores its picker from this.
    */
   guestMemberId?: number | null;
+  /**
+   * True only when `guestMemberId` is set AND that same member's own `organizationPartnerId` is set
+   * (see `ResolvedMember.organizationPartnerId`) — i.e. this contact IS a delegation member who was
+   * picked from an existing Partner. Never derived from `organization` text.
+   */
+  isOrganizationInSystem?: boolean;
 }
 
 export interface ResolvedProposedHost {

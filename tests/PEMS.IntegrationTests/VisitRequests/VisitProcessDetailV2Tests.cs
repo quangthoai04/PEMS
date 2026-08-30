@@ -294,6 +294,113 @@ public sealed class VisitProcessDetailV2Tests
         await tx.RollbackAsync();
     }
 
+    /// <summary>
+    /// PART-01: a guest member's chosen Partner (visit_guest_members.organization_partner_id) must
+    /// reach this screen's DTO, not just the internal VisitFormReadService model — the field used to
+    /// be silently dropped by VisitProcessGuestMemberDto.MapRow before OrganizationPartnerId existed
+    /// on the DTO.
+    /// </summary>
+    [Fact]
+    public async Task GuestMember_partner_pick_reaches_the_dto()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
+
+        var partner = new PEMS.Domain.Entities.Partners.Partner
+        {
+            OwnerCampusId = Campus1,
+            Name = "Test Partner Co",
+            PartnerType = "COMPANY",
+            CooperationStatus = "ACTIVE",
+            ProfileStatus = "APPROVED",
+            Visibility = "PUBLIC",
+            CreatedAt = DateTime.Now,
+        };
+        db.Partners.Add(partner);
+        await db.SaveChangesAsync();
+
+        var member = await db.VisitGuestMembers.FirstAsync(
+            m => m.VisitRequestId == req.VisitRequestId && m.MemberType == "GUEST");
+        member.OrganizationPartnerId = partner.PartnerId;
+        await db.SaveChangesAsync();
+
+        var dto = await Run(db, Owner(), req.VisitRequestId, inst[0].VisitInstanceId);
+
+        var guest = Assert.Single(dto.RequestSummary.GuestMembers, m => m.FullName == "A-guest");
+        Assert.Equal(partner.PartnerId, guest.OrganizationPartnerId);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>A member who typed a free-text organization (no Partner picked) must read back null —
+    /// never a fabricated id.</summary>
+    [Fact]
+    public async Task GuestMember_without_partner_pick_has_null_OrganizationPartnerId()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
+        var dto = await Run(db, Owner(), req.VisitRequestId, inst[0].VisitInstanceId);
+
+        var guest = Assert.Single(dto.RequestSummary.GuestMembers, m => m.FullName == "A-guest");
+        Assert.Null(guest.OrganizationPartnerId);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>
+    /// Operational Contact "organization already in system" — governed by
+    /// VisitInstanceFormDetail.OperationalContactGuestMemberId → VisitGuestMember.OrganizationPartnerId
+    /// (NP-03), never by matching OperationalContactOrganization text. Full case coverage lives in
+    /// PerCampusFormV2ReadTests (the API this screen shares its read service with); this pins that the
+    /// field survives this handler's own DTO mapping.
+    /// </summary>
+    [Fact]
+    public async Task OperationalContact_reports_organization_in_system_when_linked_member_has_a_partner()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
+
+        var partner = new PEMS.Domain.Entities.Partners.Partner
+        {
+            OwnerCampusId = Campus1, Name = "Test Partner Co", PartnerType = "COMPANY",
+            CooperationStatus = "ACTIVE", ProfileStatus = "APPROVED", Visibility = "PUBLIC",
+            CreatedAt = DateTime.Now,
+        };
+        db.Partners.Add(partner);
+        await db.SaveChangesAsync();
+
+        var member = await db.VisitGuestMembers.FirstAsync(
+            m => m.VisitRequestId == req.VisitRequestId && m.MemberType == "GUEST");
+        member.OrganizationPartnerId = partner.PartnerId;
+        var detail = await db.VisitInstanceFormDetails.FirstAsync(d => d.VisitInstanceId == inst[0].VisitInstanceId);
+        detail.OperationalContactGuestMemberId = member.GuestMemberId;
+        await db.SaveChangesAsync();
+
+        var dto = await Run(db, Owner(), req.VisitRequestId, inst[0].VisitInstanceId);
+        Assert.True(dto.RequestSummary.OperationalContactIsOrganizationInSystem);
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task OperationalContact_no_badge_when_not_linked_to_any_delegation_member()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
+        var dto = await Run(db, Owner(), req.VisitRequestId, inst[0].VisitInstanceId);
+        Assert.False(dto.RequestSummary.OperationalContactIsOrganizationInSystem);
+        await tx.RollbackAsync();
+    }
+
     [Fact]
     public async Task V2_missing_detail_throws_no_fallback()
     {

@@ -103,7 +103,8 @@
     "organization": "Organization",
     "jobTitle": "Job title",
     "phone": "Phone number",
-    "email": "Email"
+    "email": "Email",
+    "organizationInSystem": "✓ Organization already in the system"
   },
   "externalSupport": {
     "title": "Delegation support staff list"

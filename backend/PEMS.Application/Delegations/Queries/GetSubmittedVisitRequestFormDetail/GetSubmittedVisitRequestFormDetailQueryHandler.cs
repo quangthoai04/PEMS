@@ -523,6 +523,7 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
         MemberType = r.MemberType,
         FullName = r.FullName,
         Organization = r.Organization,
+        OrganizationPartnerId = r.OrganizationPartnerId,
         JobTitle = r.JobTitle,
         Nationality = r.Nationality,
         DisplayOrder = r.DisplayOrder,
@@ -549,6 +550,7 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
             Confirmed = instance.OperationalContactUserId is not null,
             ConfirmedAt = instance.OperationalContactConfirmedAt,
             ConfirmationSource = instance.OperationalContactConfirmationSource,
+            IsOrganizationInSystem = detail?.OperationalContact.IsOrganizationInSystem ?? false,
         };
     }
 
