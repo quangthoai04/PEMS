@@ -13,8 +13,14 @@ using PEMS.Application.Delegations.Queries.GetVisitInstanceSummary;
 using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
+using PEMS.Domain.Entities.Minutes;
 using PEMS.Infrastructure.Persistence;
 using Xunit;
+// PEMS.Domain.Entities.News is both a namespace and (nested inside it) a class of the same name,
+// which makes the bare identifier `News` ambiguous even through a using-alias here — the two News
+// entities below are referenced fully-qualified instead.
+using NewsEntity = PEMS.Domain.Entities.News.News;
+using NewsTranslationEntity = PEMS.Domain.Entities.News.NewsTranslation;
 
 namespace PEMS.IntegrationTests.VisitRequests;
 
@@ -223,6 +229,151 @@ public sealed class VisitInstanceSummaryV2Tests
             await tx.RollbackAsync();
         }
         Assert.Equal(small, large);
+    }
+
+    // ── VisitRequestId + real Minutes/Media/News workspace state ──────────────
+
+    [Fact]
+    public async Task VisitRequestId_is_populated_for_the_frontend_history_link()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
+        var dto = await Run(db, Ho(), inst[0].VisitInstanceId);
+
+        Assert.Equal(req.VisitRequestId, dto.VisitRequestId);
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task Minutes_media_news_report_no_data_when_none_exists_not_a_fake_placeholder()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (_, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
+        var dto = await Run(db, Ho(), inst[0].VisitInstanceId);
+
+        Assert.False(dto.MinutesSummary!.HasMinutes);
+        Assert.Equal("NOT_STARTED", dto.MinutesSummary.Status);
+        Assert.False(dto.MinutesSummary.CanCurrentUserEdit);
+        Assert.False(dto.MinutesSummary.CanCurrentUserTakeLock);
+
+        Assert.Empty(dto.MediaSummary!.Items);
+        Assert.Equal(0, dto.MediaSummary.UploadedCount);
+        Assert.False(dto.MediaSummary.CanCurrentUserUpload);
+
+        Assert.False(dto.NewsSummary!.HasNews);
+        Assert.Equal("NOT_STARTED", dto.NewsSummary.Status);
+        Assert.False(dto.NewsSummary.CanCurrentUserCreate);
+        Assert.False(dto.NewsSummary.CanCurrentUserEdit);
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task Minutes_shows_real_content_when_it_exists_but_never_grants_edit_on_this_page()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (_, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
+        db.Minutes.Add(new Minute
+        {
+            VisitInstanceId = inst[0].VisitInstanceId,
+            Title = "Bien ban buoi lam viec",
+            Content = "Noi dung bien ban that",
+            Status = "SAVED", // minutes.status ENUM is ('DRAFT','SAVED') only — no 'COMPLETED' value exists
+            CreatedAt = DateTime.Now,
+        });
+        await db.SaveChangesAsync();
+
+        // A Staff Leader is a genuine Contribution-page editor for a live instance — using that
+        // viewer here proves the forced-false flags are this handler's own decision, not an
+        // accident of picking a viewer (HO) who was never going to get edit rights anyway.
+        var dto = await Run(db, StaffLeader(SlCampus1, Campus1), inst[0].VisitInstanceId);
+
+        Assert.True(dto.MinutesSummary!.HasMinutes);
+        Assert.Equal("Noi dung bien ban that", dto.MinutesSummary.Content);
+        Assert.Equal("SAVED", dto.MinutesSummary.Status);
+        Assert.False(dto.MinutesSummary.CanCurrentUserEdit);
+        Assert.False(dto.MinutesSummary.CanCurrentUserTakeLock);
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task News_shows_real_content_when_it_exists_but_never_grants_create_or_edit_on_this_page()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (_, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
+        var news = new NewsEntity
+        {
+            VisitInstanceId = inst[0].VisitInstanceId,
+            AuthorUserId = HoUser,
+            Status = "PUBLISHED",
+            SubmittedAt = DateTime.Now,
+            CreatedAt = DateTime.Now,
+        };
+        news.Translations.Add(new NewsTranslationEntity
+        {
+            LanguageCode = "vi",
+            Title = "Doan ABC tham FPTU",
+            Slug = "doan-abc-tham-fptu-" + Guid.NewGuid().ToString("N")[..8],
+            Summary = "Buoi lam viec thanh cong.",
+            CreatedAt = DateTime.Now,
+        });
+        db.News.Add(news);
+        await db.SaveChangesAsync();
+
+        var dto = await Run(db, StaffLeader(SlCampus1, Campus1), inst[0].VisitInstanceId);
+
+        Assert.True(dto.NewsSummary!.HasNews);
+        Assert.Equal("Doan ABC tham FPTU", dto.NewsSummary.Title);
+        Assert.Equal("Buoi lam viec thanh cong.", dto.NewsSummary.Description);
+        Assert.False(dto.NewsSummary.CanCurrentUserCreate);
+        Assert.False(dto.NewsSummary.CanCurrentUserEdit);
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task HO_never_receives_the_internal_news_rejection_note()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (_, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
+        var news = new NewsEntity
+        {
+            VisitInstanceId = inst[0].VisitInstanceId,
+            AuthorUserId = HoUser,
+            Status = "REJECTED",
+            SubmittedAt = DateTime.Now,
+            CreatedAt = DateTime.Now,
+            ReviewNote = "Noi dung chua phu hop, can chinh sua lai.",
+        };
+        news.Translations.Add(new NewsTranslationEntity
+        {
+            LanguageCode = "vi",
+            Title = "Doan XYZ tham FPTU",
+            Slug = "doan-xyz-tham-fptu-" + Guid.NewGuid().ToString("N")[..8],
+            CreatedAt = DateTime.Now,
+        });
+        db.News.Add(news);
+        await db.SaveChangesAsync();
+
+        var asHo = await Run(db, Ho(), inst[0].VisitInstanceId);
+        Assert.Null(asHo.NewsSummary!.RejectionReason);
+
+        var asStaffLeader = await Run(db, StaffLeader(SlCampus1, Campus1), inst[0].VisitInstanceId);
+        Assert.Equal("Noi dung chua phu hop, can chinh sua lai.", asStaffLeader.NewsSummary!.RejectionReason);
+        await tx.RollbackAsync();
     }
 
     // ── Seed helpers ──────────────────────────────────────────────────────────

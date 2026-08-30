@@ -20,20 +20,28 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
-import type { ProcessSummaryPage, ContributionSectionStatus } from '../../../features/delegations/types/delegations.types';
+import type { ProcessSummaryPage } from '../../../features/delegations/types/delegations.types';
 import { RegistrantInfoReadOnly, DelegationInfoReadOnly } from '../../../features/delegations/components/RequestInfoReadOnly';
+import { MinutesContributionSection } from './components/MinutesContributionSection';
+import { MediaContributionSection } from './components/MediaContributionSection';
+import VisitHistoryTimeline from '../../../features/visit-request/components/VisitHistoryTimeline';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
-import { formatVisitStatus } from '../../../shared/utils/domainLabels';
+import { formatVisitStatus, formatInvitationStatus } from '../../../shared/utils/domainLabels';
 import { useAuth } from '../../../shared/hooks/useAuth';
 
 const getStatusColor = (status: string) => {
   switch (status) {
+    // Waiting on the guest (contact not confirmed yet) or on the campus Staff Leader — neither is
+    // decided or in progress, so both read as amber "pending", same family as ASSIGNED below.
+    case 'WAITING_CONTACT_CONFIRMATION': return 'bg-amber-50 text-amber-800 border-amber-200';
+    case 'WAITING_REQUEST_APPROVAL': return 'bg-amber-100 text-amber-800 border-amber-200';
     case 'ASSIGNED': return 'bg-cyan-100 text-cyan-800 border-cyan-200';
     case 'BEFORE_VISIT': return 'bg-blue-100 text-blue-800 border-blue-200';
     case 'DURING_VISIT': return 'bg-[#f37021]/10 text-[#f37021] border-[#f37021]/20';
     case 'AFTER_VISIT': return 'bg-indigo-100 text-indigo-800 border-indigo-200';
     case 'CLOSED': return 'bg-[#00a651]/10 text-[#00a651] border-[#00a651]/20';
     case 'CANCELLED': return 'bg-rose-100 text-rose-800 border-rose-200';
+    case 'REJECTED': return 'bg-rose-100 text-rose-800 border-rose-200';
     default: return 'bg-gray-100 text-gray-800 border-gray-200';
   }
 };
@@ -106,10 +114,44 @@ const EmptyState = ({ message = 'Chưa có dữ liệu cho phần này.' }) => (
   </div>
 );
 
-const WorkspaceStatus = ({ status }: { status: ContributionSectionStatus }) => {
-  if (!status.canView) return <EmptyState message="Bạn không có quyền xem phần này." />;
-  if (status.placeholder) return <EmptyState message="Chưa có dữ liệu được tạo." />;
-  return <div className="text-sm text-gray-600 bg-slate-50 p-4 rounded-xl border border-slate-200">Dữ liệu đang được hiển thị... (Phase 2/3)</div>;
+// Same values/wording as VisitContributionPage.tsx's own LOGISTICS_STATUS_LABELS — kept as a local
+// copy (no shared, exported LogisticsItemStatus label source exists yet; domainLabels.ts's
+// LOGISTICS_STATUS map is a different lifecycle with a different value set and would be wrong here).
+const LOGISTICS_STATUS_LABELS: Record<string, string> = {
+  REQUESTED: 'Đã yêu cầu', ASSIGNED: 'Đã phân công', ACCEPTED: 'Đã chấp nhận',
+  IN_PROGRESS: 'Đang xử lý', DONE: 'Hoàn tất', REJECTED: 'Từ chối',
+  CHANGE_PROPOSED: 'Đề xuất thay đổi', CANCELLED: 'Đã hủy', DECLINED: 'Từ chối phân công',
+};
+// Semantic grouping so REJECTED/DECLINED never reads as "still pending" next to REQUESTED/IN_PROGRESS.
+const LOGISTICS_STATUS_CLASS: Record<string, string> = {
+  REQUESTED: 'bg-amber-50 text-amber-700 border-amber-200',
+  CHANGE_PROPOSED: 'bg-amber-50 text-amber-700 border-amber-200',
+  ASSIGNED: 'bg-blue-50 text-blue-700 border-blue-200',
+  ACCEPTED: 'bg-blue-50 text-blue-700 border-blue-200',
+  IN_PROGRESS: 'bg-blue-50 text-blue-700 border-blue-200',
+  DONE: 'bg-emerald-50 text-emerald-600 border-emerald-200',
+  REJECTED: 'bg-rose-50 text-rose-700 border-rose-200',
+  DECLINED: 'bg-rose-50 text-rose-700 border-rose-200',
+  CANCELLED: 'bg-slate-100 text-slate-600 border-slate-200',
+};
+// Same shape as StaffCalendarLogic's PARTICIPANT_STATUS colors elsewhere — ASSIGNED/REMOVED never
+// had a color case here before.
+const PARTICIPANT_STATUS_CLASS: Record<string, string> = {
+  ACCEPTED: 'bg-emerald-100 text-emerald-700',
+  DECLINED: 'bg-rose-100 text-rose-700',
+  INVITED: 'bg-amber-100 text-amber-700',
+  ASSIGNED: 'bg-blue-100 text-blue-700',
+  REMOVED: 'bg-gray-100 text-gray-700',
+};
+
+// The backend only ever returns HOST | HO | STAFF_LEADER for this page's `relation` (see
+// GetVisitInstanceSummaryQueryHandler.cs: `relation = isHost ? "HOST" : (isHo ? "HO" : "STAFF_LEADER")`).
+// The banner sentence used to be a 2-way ternary (HO vs. everything else), which told a Host viewer
+// the page was "for Staff Leader".
+const RELATION_BANNER_LABELS: Record<string, string> = {
+  HOST: 'Host',
+  HO: 'Head Office',
+  STAFF_LEADER: 'Staff Leader',
 };
 
 export function VisitProcessSummaryPage() {
@@ -244,7 +286,7 @@ export function VisitProcessSummaryPage() {
       <div className="bg-blue-50 border-l-4 border-[#004c91] p-4 rounded-xl flex items-start gap-3 shadow-sm mb-8">
         <AlertCircle className="w-5 h-5 text-[#004c91] shrink-0 mt-0.5" />
         <p className="text-sm font-normal text-blue-900">
-          Đây là màn hình <strong>Báo cáo tổng hợp (Chỉ đọc)</strong> dành cho {perm.relation === 'HO' ? 'Head Office' : 'Staff Leader'} giám sát quá trình tiếp khách. Mọi chức năng thao tác, cập nhật đều bị khóa.
+          Đây là màn hình <strong>Báo cáo tổng hợp (Chỉ đọc)</strong> dành cho {RELATION_BANNER_LABELS[perm.relation] || 'Staff Leader'} giám sát quá trình tiếp khách. Mọi chức năng thao tác, cập nhật đều bị khóa.
         </p>
       </div>
 
@@ -317,12 +359,8 @@ export function VisitProcessSummaryPage() {
                       <td className="p-3 text-sm font-medium text-gray-900">{p.fullName}</td>
                       <td className="p-3 text-sm text-gray-600">{p.isHost ? 'Người phụ trách tiếp đón' : p.participantRole}</td>
                       <td className="p-3 text-sm">
-                        <span className={`px-2 py-0.5 rounded-md text-xs font-bold ${
-                          p.status === 'ACCEPTED' ? 'bg-emerald-100 text-emerald-700' :
-                          p.status === 'DECLINED' ? 'bg-rose-100 text-rose-700' :
-                          p.status === 'INVITED' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-700'
-                        }`}>
-                          {p.status}
+                        <span className={`px-2 py-0.5 rounded-md text-xs font-bold ${PARTICIPANT_STATUS_CLASS[p.status] || 'bg-gray-100 text-gray-700'}`}>
+                          {formatInvitationStatus(p.status)}
                         </span>
                       </td>
                     </tr>
@@ -349,11 +387,8 @@ export function VisitProcessSummaryPage() {
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{log.itemType}</span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
-                    <span className={`px-2 py-0.5 rounded border font-bold ${
-                      log.status === 'DONE' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 
-                      'bg-amber-50 text-amber-600 border-amber-200'
-                    }`}>
-                      {log.status}
+                    <span className={`px-2 py-0.5 rounded border font-bold ${LOGISTICS_STATUS_CLASS[log.status] || 'bg-gray-100 text-gray-700 border-gray-200'}`}>
+                      {LOGISTICS_STATUS_LABELS[log.status] || log.status}
                     </span>
                     <span className="text-gray-500">
                       Đơn vị: {log.departmentName || 'Chưa rõ'}
@@ -365,24 +400,67 @@ export function VisitProcessSummaryPage() {
           ) : <EmptyState message="Không có hạng mục hậu cần nào." />}
         </SectionCard>
 
+        {/* Minutes/Media reuse the exact same read-only-capable sections the Contribution Page uses
+            (isReadOnly hides every edit/upload control; onChanged is a no-op — nothing on this page
+            ever writes). News is NOT reused here: VisitNewsPostList's per-row Duyệt/Từ chối buttons
+            are driven by its own backend response (canApprove/canReject), not by an isReadOnly prop,
+            so embedding it would put real, working approval buttons on a screen whose own banner
+            promises none exist. It gets a minimal, genuinely inert read-only block instead. */}
         <SectionCard title="Biên bản làm việc" icon={FileText} isExpanded={expandedSections.minutes} onToggle={() => toggleSection('minutes')} canView={perm?.canViewMinutesSummary}>
-          {data.minutesSummary ? <WorkspaceStatus status={data.minutesSummary} /> : <EmptyState message="Chưa có dữ liệu." />}
+          {data.minutesSummary ? (
+            <MinutesContributionSection
+              visitInstanceId={visitInstanceId!}
+              data={data.minutesSummary}
+              canView
+              instanceStatus={perm.instanceStatus}
+              onChanged={() => {}}
+              isReadOnly
+            />
+          ) : <EmptyState message="Chưa có dữ liệu." />}
         </SectionCard>
 
         <SectionCard title="Hình ảnh / Media" icon={ImageIcon} isExpanded={expandedSections.media} onToggle={() => toggleSection('media')} canView={perm?.canViewMediaSummary}>
-          {data.mediaSummary ? <WorkspaceStatus status={data.mediaSummary} /> : <EmptyState message="Chưa có dữ liệu." />}
+          {data.mediaSummary ? (
+            <MediaContributionSection
+              visitInstanceId={visitInstanceId!}
+              data={data.mediaSummary}
+              canView
+              instanceStatus={perm.instanceStatus}
+              onChanged={() => {}}
+              relation={perm.relation}
+              isReadOnly
+            />
+          ) : <EmptyState message="Chưa có dữ liệu." />}
         </SectionCard>
 
         <SectionCard title="Tin tức & Bài viết" icon={Newspaper} isExpanded={expandedSections.news} onToggle={() => toggleSection('news')} canView={perm?.canViewNewsSummary}>
-          {data.newsSummary ? <WorkspaceStatus status={data.newsSummary} /> : <EmptyState message="Chưa có dữ liệu." />}
+          {data.newsSummary?.hasNews ? (
+            <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-2">
+              <div className="flex items-start justify-between gap-3">
+                <h3 className="font-bold text-gray-800 text-sm">{data.newsSummary.title}</h3>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 shrink-0">
+                  {data.newsSummary.status}
+                </span>
+              </div>
+              {data.newsSummary.description && (
+                <p className="text-sm text-gray-600">{data.newsSummary.description}</p>
+              )}
+              <p className="text-xs text-gray-500">
+                Người tạo: {data.newsSummary.createdByName || 'Chưa rõ'}
+              </p>
+              {data.newsSummary.rejectionReason && (
+                <p className="text-xs text-rose-600">Lý do từ chối: {data.newsSummary.rejectionReason}</p>
+              )}
+            </div>
+          ) : <EmptyState message="Chưa có bài tin tức nào cho chuyến thăm này." />}
         </SectionCard>
-        
+
         <SectionCard title="Đánh giá chất lượng (Feedback)" icon={MessageSquare} isExpanded={expandedSections.feedback} onToggle={() => toggleSection('feedback')} canView={perm?.canViewFeedbackSummary}>
           <EmptyState message="Feedback chỉ khả dụng sau khi chuyến thăm hoàn tất." />
         </SectionCard>
 
         <SectionCard title="Lịch sử cập nhật (Timeline)" icon={History} isExpanded={expandedSections.timeline} onToggle={() => toggleSection('timeline')} canView={perm?.canViewTimeline}>
-          <EmptyState message="Tính năng Timeline đang được phát triển." />
+          <VisitHistoryTimeline visitRequestId={data.visitRequestId} />
         </SectionCard>
       </div>
     </div>

@@ -786,14 +786,19 @@ export interface ContributionSectionStatus {
 }
 
 export interface ProcessSummaryPage {
+  /** Needed to call the request-scoped history/timeline endpoint — this page is keyed by
+   * visitInstanceId alone, which the timeline endpoint does not accept. */
+  visitRequestId: number;
   permissions: ProcessSummaryPermission;
   requestSummary?: VisitProcessRequestSummary | null;
   agendaSummary: VisitAgendaItem[];
   participantSummary: VisitParticipantListItem[];
   logisticsSummary: ContributionLogisticsItem[];
-  minutesSummary: ContributionSectionStatus;
-  mediaSummary: ContributionSectionStatus;
-  newsSummary: ContributionSectionStatus;
+  /** Real workspace state, same shape the Contribution Page uses — every edit/upload/create flag on
+   * these is always false here since Process Summary is read-only end to end. */
+  minutesSummary: MinutesContributionStatus | null;
+  mediaSummary: MediaContributionStatus | null;
+  newsSummary: NewsContributionStatus | null;
 }
 
 export interface ProcessSummaryPermission {

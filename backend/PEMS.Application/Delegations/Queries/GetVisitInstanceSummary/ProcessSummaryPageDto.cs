@@ -9,15 +9,29 @@ namespace PEMS.Application.Delegations.Queries.GetVisitInstanceSummary;
 public sealed class ProcessSummaryPageDto
 {
     public ProcessSummaryPermissionDto Permissions { get; set; } = default!;
-    
+
+    /// <summary>
+    /// The request this instance belongs to. Needed by the frontend to call the request-scoped
+    /// history/timeline endpoint (GET /v2/visit-requests/{visitRequestId}/history) — this page is
+    /// keyed by visitInstanceId alone, which is not enough to reach that endpoint on its own.
+    /// </summary>
+    public ulong VisitRequestId { get; set; }
+
     public VisitProcessRequestSummaryDto? RequestSummary { get; set; }
     public List<AgendaItemDto> AgendaSummary { get; set; } = new();
     public List<VisitParticipantListItemDto> ParticipantSummary { get; set; } = new();
     public List<ContributionLogisticsItemDto> LogisticsSummary { get; set; } = new();
-    
-    public ContributionSectionStatusDto MinutesSummary { get; set; } = new();
-    public ContributionSectionStatusDto MediaSummary { get; set; } = new();
-    public ContributionSectionStatusDto NewsSummary { get; set; } = new();
+
+    /// <summary>
+    /// Real workspace state (spec §5.3/§7), reusing the same DTOs the Contribution Page uses so the
+    /// two screens can never disagree about whether a visit instance has minutes/media/news. This
+    /// page is read-only end to end, so every edit/upload/create-capability flag on these DTOs is
+    /// always forced false here regardless of what the underlying business rule would grant a
+    /// Contribution-page caller — see GetVisitInstanceSummaryQueryHandler.
+    /// </summary>
+    public MinutesContributionDto? MinutesSummary { get; set; }
+    public MediaContributionDto? MediaSummary { get; set; }
+    public NewsContributionDto? NewsSummary { get; set; }
 }
 
 public sealed class ProcessSummaryPermissionDto

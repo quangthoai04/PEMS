@@ -15,6 +15,7 @@ import {
   staffCalendarApi,
   type StaffCalendarDetail,
 } from '../../../../features/dashboard/api/staffCalendarApi';
+import { VISIT_TYPE_LABELS } from '../../../../features/delegations/components/RequestInfoReadOnly';
 import { timeAgo } from '../../../../features/notifications/components/NotificationBellButton';
 import type { NotificationItem } from '../../../../features/notifications/types/notification.types';
 import { toVietnamDateTimeLocalInput } from '../../../../shared/utils/vietnamTime';
@@ -45,13 +46,6 @@ const COLOR_BADGE: Record<string, string> = {
   PROCESSED: 'bg-emerald-100 text-emerald-700',
   CANCELLED_OR_EXPIRED: 'bg-slate-200 text-slate-600',
   NEUTRAL: 'bg-slate-100 text-slate-600',
-};
-
-const VISIT_TYPE_LABELS: Record<string, string> = {
-  CAMPUS_TOUR: 'Tham quan campus',
-  MEETING: 'Họp / làm việc',
-  EVENT: 'Sự kiện',
-  OTHER: 'Khác',
 };
 
 const MEDIA_CONSENT_LABELS: Record<string, string> = {

@@ -203,8 +203,86 @@ public sealed class GetVisitInstanceSummaryQueryHandler : IRequestHandler<GetVis
                              };
         var logistics = await logisticsQuery.ToListAsync(cancellationToken);
 
+        // ── Real workspace state (minutes / media / news) ──
+        // Same read shape as GetVisitInstanceContributionQueryHandler (the Contribution Page), so the
+        // two screens can never report different content for the same instance. This page is
+        // read-only end to end (spec: "Mọi chức năng thao tác, cập nhật đều bị khóa"), so every
+        // edit/upload/create-capability flag below is hardcoded false regardless of what Contribution's
+        // own participant-based rule would grant — this handler never runs that rule at all.
+        var minutes = await _db.Minutes
+            .FirstOrDefaultAsync(m => m.VisitInstanceId == instance.VisitInstanceId, cancellationToken);
+        var mediaDocs = await _db.Documents
+            .Include(d => d.File)
+            .Where(d => d.OwnerType == "VISIT_INSTANCE_MEDIA" && d.OwnerId == instance.VisitInstanceId)
+            .ToListAsync(cancellationToken);
+        var news = await _db.News
+            .Include(n => n.Translations)
+            .FirstOrDefaultAsync(n => n.VisitInstanceId == instance.VisitInstanceId, cancellationToken);
+
+        var workspaceUserIds = new HashSet<ulong>();
+        if (minutes?.EditLockedBy != null) workspaceUserIds.Add(minutes.EditLockedBy.Value);
+        if (news?.CreatedBy != null) workspaceUserIds.Add(news.CreatedBy.Value);
+        foreach (var doc in mediaDocs)
+        {
+            if (doc.CreatedBy != null) workspaceUserIds.Add(doc.CreatedBy.Value);
+        }
+        var workspaceUserNames = workspaceUserIds.Count == 0
+            ? new Dictionary<ulong, string>()
+            : await _db.Users.Where(u => workspaceUserIds.Contains(u.UserId))
+                .ToDictionaryAsync(u => u.UserId, u => u.FullName, cancellationToken);
+
+        var minutesSummary = new MinutesContributionDto
+        {
+            HasMinutes = minutes != null,
+            Status = minutes?.Status ?? "NOT_STARTED",
+            Content = minutes?.Content,
+            LockedByUserId = minutes?.EditLockedBy,
+            LockedByName = minutes?.EditLockedBy != null && workspaceUserNames.TryGetValue(minutes.EditLockedBy.Value, out var mName) ? mName : null,
+            LockedUntil = minutes?.EditLockExpiresAt,
+            UpdatedAt = minutes?.UpdatedAt ?? minutes?.CreatedAt,
+            CanCurrentUserTakeLock = false,
+            CanCurrentUserEdit = false,
+        };
+        var mediaSummary = new MediaContributionDto
+        {
+            Items = mediaDocs.Select(d => new ContributionMediaItemDto
+            {
+                MediaId = d.DocumentId,
+                FileName = d.File.OriginalFilename,
+                FileType = d.File.MimeType ?? "application/octet-stream",
+                Url = d.File.WebViewUrl ?? d.File.DownloadUrl ?? "",
+                ThumbnailUrl = d.File.ThumbnailUrl,
+                UploadedByUserId = d.CreatedBy ?? 0,
+                UploadedByName = d.CreatedBy != null && workspaceUserNames.TryGetValue(d.CreatedBy.Value, out var dName) ? dName : "Unknown",
+                UploadedAt = d.CreatedAt,
+                Description = d.Description,
+                IsPrimary = d.Status == "PRIMARY",
+            }).ToList(),
+            RequiredMinimumCount = 1,
+            UploadedCount = mediaDocs.Count,
+            IsRequirementSatisfied = mediaDocs.Count >= 1,
+            CanCurrentUserUpload = false,
+        };
+        var newsSummary = new NewsContributionDto
+        {
+            HasNews = news != null,
+            NewsId = news?.NewsId,
+            Status = news?.Status ?? "NOT_STARTED",
+            Title = news?.Translations.FirstOrDefault()?.Title ?? "Bài tin tức",
+            Description = news?.Translations.FirstOrDefault()?.Summary,
+            CreatedByName = news?.CreatedBy != null && workspaceUserNames.TryGetValue(news.CreatedBy.Value, out var nName) ? nName : null,
+            UpdatedAt = news?.UpdatedAt ?? news?.CreatedAt,
+            // Same rule Contribution applies for HO: never expose the internal rejection note.
+            RejectionReason = isHo ? null : news?.ReviewNote,
+            NewsNotRequired = instance.NewsNotRequired,
+            MediaConsentAllowed = mediaConsentStatus == PEMS.Shared.MediaConsentStatus.Agreed,
+            CanCurrentUserCreate = false,
+            CanCurrentUserEdit = false,
+        };
+
         return new ProcessSummaryPageDto
         {
+            VisitRequestId = visit.VisitRequestId,
             Permissions = new ProcessSummaryPermissionDto
             {
                 CanViewSummaryPage = true,
@@ -230,9 +308,9 @@ public sealed class GetVisitInstanceSummaryQueryHandler : IRequestHandler<GetVis
             AgendaSummary = agenda,
             ParticipantSummary = participants,
             LogisticsSummary = logistics,
-            MinutesSummary = new ContributionSectionStatusDto { CanView = true, CanEdit = false, Placeholder = true },
-            MediaSummary = new ContributionSectionStatusDto { CanView = true, CanEdit = false, Placeholder = true },
-            NewsSummary = new ContributionSectionStatusDto { CanView = true, CanEdit = false, Placeholder = true }
+            MinutesSummary = minutesSummary,
+            MediaSummary = mediaSummary,
+            NewsSummary = newsSummary,
         };
     }
 

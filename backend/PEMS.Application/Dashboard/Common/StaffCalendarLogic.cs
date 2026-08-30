@@ -62,7 +62,13 @@ public static class StaffCalendarLogic
         {
             // Campus instance của campus mình đang chờ xử lý: duyệt = duyệt + gán host trong
             // một bước (bắt buộc chọn host, có thể tự chọn mình); hoặc từ chối kèm lý do.
-            if (x.CampusStatus == VisitInstanceStatus.WaitingRequestApproval)
+            // Global contact-confirmation gate (spec §3.4, xem CampusApprovalExecutor.ApproveAndAssignHostAsync):
+            // trong khi request còn PENDING_CONTACT_CONFIRMATION, chưa campus nào của request được quyết
+            // định — kể cả campus mà chính đầu mối vận hành của nó đã xác nhận, nếu một campus anh chị em
+            // khác trong cùng request chưa xác nhận. Mirror gate ở đây để UI không hiện nút mà command
+            // layer chắc chắn sẽ từ chối (409) — command layer vẫn là nơi enforce thật, đây chỉ là hiển thị.
+            if (x.CampusStatus == VisitInstanceStatus.WaitingRequestApproval
+                && !VisitRequestStatuses.IsBehindContactGate(x.RequestStatus))
             {
                 actions.CanApprove = true;
                 actions.CanReject = true;
@@ -104,6 +110,9 @@ public static class StaffCalendarLogic
         {
             label = x.CampusStatus switch
             {
+                // Đang chờ khách xác nhận đầu mối vận hành — chờ KHÁCH, không phải chờ Staff Leader
+                // xử lý. Cùng nghĩa/cùng chữ với VisitRowLabels.Resolve cho giá trị này.
+                VisitInstanceStatus.WaitingContactConfirmation => "Chờ xác nhận",
                 VisitInstanceStatus.WaitingRequestApproval => "Chờ xử lý tại campus",
                 VisitInstanceStatus.Assigned => "Đã gán host",
                 VisitInstanceStatus.BeforeVisit => "Chuẩn bị đón tiếp",
@@ -114,13 +123,17 @@ public static class StaffCalendarLogic
             };
         }
 
+        // Đang chờ khách xác nhận đầu mối: chưa có gì cho Staff Leader làm ở bước này (BuildAllowedActions
+        // không cấp action nào), nên KHÔNG được tô NEEDS_ACTION — dễ nhầm "cần xử lý" thành việc của mình.
+        bool isWaitingContact = x.CampusStatus == VisitInstanceStatus.WaitingContactConfirmation;
+
         // Thứ tự ưu tiên: tôi là host > hủy/hết hạn > cần xử lý (chỉ Staff Leader) > đã xử lý / đã có người phụ trách > trung tính.
         string color;
         if (isMine)
             color = StaffCalendarColorTypes.Mine;
         else if (isCancelled || isExpired)
             color = StaffCalendarColorTypes.CancelledOrExpired;
-        else if (hasNoHost && !isRejected && viewer.IsStaffLeader)
+        else if (hasNoHost && !isRejected && !isWaitingContact && viewer.IsStaffLeader)
             color = StaffCalendarColorTypes.NeedsAction;
         else if (isDecided || !hasNoHost)
             color = StaffCalendarColorTypes.Processed;
