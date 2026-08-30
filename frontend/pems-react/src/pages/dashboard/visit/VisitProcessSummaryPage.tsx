@@ -25,6 +25,8 @@ import { RegistrantInfoReadOnly, DelegationInfoReadOnly } from '../../../feature
 import { MinutesContributionSection } from './components/MinutesContributionSection';
 import { MediaContributionSection } from './components/MediaContributionSection';
 import VisitHistoryTimeline from '../../../features/visit-request/components/VisitHistoryTimeline';
+import { CompactStarRating } from '../../../features/feedbacks/components/CompactStarRating';
+import { FEEDBACK_TYPE_LABELS } from '../../../features/feedbacks/constants/feedbackTypes';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 import { formatVisitStatus, formatInvitationStatus } from '../../../shared/utils/domainLabels';
 import { useAuth } from '../../../shared/hooks/useAuth';
@@ -456,7 +458,34 @@ export function VisitProcessSummaryPage() {
         </SectionCard>
 
         <SectionCard title="Đánh giá chất lượng (Feedback)" icon={MessageSquare} isExpanded={expandedSections.feedback} onToggle={() => toggleSection('feedback')} canView={perm?.canViewFeedbackSummary}>
-          <EmptyState message="Feedback chỉ khả dụng sau khi chuyến thăm hoàn tất." />
+          {(data.feedbackSummary?.length || 0) > 0 ? (
+            <div className="space-y-3">
+              {data.feedbackSummary.map((f) => (
+                <div key={f.feedbackId} className="p-4 rounded-xl border border-gray-200 bg-white shadow-sm flex flex-col gap-2">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="font-bold text-gray-800 text-sm">{f.targetNameSnapshot}</h3>
+                      <p className="text-xs text-gray-500">
+                        {FEEDBACK_TYPE_LABELS[f.feedbackType] || f.feedbackType}
+                        {' · '}
+                        {f.submitterRole === 'HOST' ? 'Host đánh giá' : 'Khách đánh giá'}: {f.submitterNameSnapshot}
+                      </p>
+                    </div>
+                    <CompactStarRating value={f.rating} readOnly size="sm" />
+                  </div>
+                  {f.comment && <p className="text-sm text-gray-600">{f.comment}</p>}
+                  <p className="text-[11px] text-gray-400">{formatVietnamDateTime(f.submittedAt)}</p>
+                </div>
+              ))}
+            </div>
+          ) : perm.instanceStatus === 'AFTER_VISIT' || perm.instanceStatus === 'CLOSED' ? (
+            // The instance has already reached the stage where feedback submission opens
+            // (FeedbackEligibility.EligibleInstanceStatuses on the backend) — a genuinely empty
+            // list here means nobody has submitted yet, not that the feature is unavailable.
+            <EmptyState message="Chưa có đánh giá nào cho chuyến thăm này." />
+          ) : (
+            <EmptyState message="Feedback chỉ khả dụng sau khi chuyến thăm hoàn tất." />
+          )}
         </SectionCard>
 
         <SectionCard title="Lịch sử cập nhật (Timeline)" icon={History} isExpanded={expandedSections.timeline} onToggle={() => toggleSection('timeline')} canView={perm?.canViewTimeline}>

@@ -10,7 +10,8 @@
  *   - News shows the real title/status/description when present instead of the same placeholder
  *   - Timeline renders the real VisitHistoryTimeline instead of the false
  *     "Tính năng Timeline đang được phát triển" claim
- *   - Feedback is intentionally UNCHANGED (blocked — no compatible backend source, see audit)
+ *   - Feedback now renders real per-instance feedback (all 4 feedback types, server-authorized
+ *     identically to every other section) instead of a static placeholder
  *
  * MinutesContributionSection / MediaContributionSection / VisitHistoryTimeline are mocked at the
  * module boundary, same convention VisitContributionPage.test.tsx already uses for the first two —
@@ -56,8 +57,13 @@ vi.mock('../../../../features/visit-request/components/VisitHistoryTimeline', ()
 }));
 
 import { VisitProcessSummaryPage } from '../VisitProcessSummaryPage';
+import type { ProcessSummaryPage, ProcessSummaryPermission, VisitParticipantListItem } from '../../../../features/delegations/types/delegations.types';
 
-const BASE_PERMISSIONS = {
+// Typed against the real interfaces (not inferred from the object literal below) so Partial<>
+// overrides in individual tests can legally set ANY field the interface declares — including
+// optional ones like minutesSummary.content or newsSummary.newsId that don't appear in this base
+// fixture — instead of TypeScript narrowing each field to only the shape seeded here.
+const BASE_PERMISSIONS: ProcessSummaryPermission = {
   canViewSummaryPage: true,
   relation: 'STAFF_LEADER',
   canViewRequestSummary: true,
@@ -78,19 +84,20 @@ const BASE_PERMISSIONS = {
   plannedEndAt: '2026-09-01T11:00:00',
 };
 
-const BASE_PAGE = {
+const BASE_PAGE: ProcessSummaryPage = {
   visitRequestId: 9001,
   permissions: BASE_PERMISSIONS,
   requestSummary: null,
   agendaSummary: [],
-  participantSummary: [] as Array<{ fullName: string; isHost: boolean; participantRole: string; status: string }>,
-  logisticsSummary: [] as Array<{ title: string; status: string; itemType?: string; departmentName?: string | null }>,
+  participantSummary: [],
+  logisticsSummary: [],
   minutesSummary: { hasMinutes: false, status: 'NOT_STARTED', canCurrentUserTakeLock: false, canCurrentUserEdit: false },
   mediaSummary: { items: [], requiredMinimumCount: 1, uploadedCount: 0, isRequirementSatisfied: false, canCurrentUserUpload: false },
   newsSummary: { hasNews: false, status: 'NOT_STARTED', newsNotRequired: false, mediaConsentAllowed: true, canCurrentUserCreate: false, canCurrentUserEdit: false },
+  feedbackSummary: [],
 };
 
-function mockPage(overrides: Partial<typeof BASE_PAGE> & { permissions?: Partial<typeof BASE_PERMISSIONS> } = {}) {
+function mockPage(overrides: Partial<Omit<ProcessSummaryPage, 'permissions'>> & { permissions?: Partial<ProcessSummaryPermission> } = {}) {
   return {
     ...BASE_PAGE,
     ...overrides,
@@ -158,7 +165,11 @@ describe('VisitProcessSummaryPage — participant status is translated, every re
     ['REMOVED', 'Đã gỡ'],
   ])('%s renders as "%s", not the raw enum', async (status, expectedLabel) => {
     getSummary.mockResolvedValue(mockPage({
-      participantSummary: [{ fullName: 'Nguyễn Văn A', isHost: false, participantRole: 'IC_SUPPORT', status }],
+      participantSummary: [{
+        participantId: 1, userId: 1, email: 'a@example.com', roleCode: 'STAFF',
+        fullName: 'Nguyễn Văn A', isHost: false, participantRole: 'IC_SUPPORT',
+        status: status as VisitParticipantListItem['status'],
+      }],
     }));
     render(<VisitProcessSummaryPage />);
 
@@ -175,8 +186,8 @@ describe('VisitProcessSummaryPage — logistics status separates refused from in
   it('REJECTED and IN_PROGRESS get visually distinct colors, not the same amber "pending" class', async () => {
     getSummary.mockResolvedValue(mockPage({
       logisticsSummary: [
-        { title: 'Phòng họp A', status: 'IN_PROGRESS', itemType: 'ROOM', departmentName: 'Facilities' },
-        { title: 'Xe đưa đón', status: 'REJECTED', itemType: 'TRANSPORT', departmentName: 'Facilities' },
+        { logisticsItemId: 1, title: 'Phòng họp A', status: 'IN_PROGRESS', itemType: 'ROOM', departmentName: 'Facilities' },
+        { logisticsItemId: 2, title: 'Xe đưa đón', status: 'REJECTED', itemType: 'TRANSPORT', departmentName: 'Facilities' },
       ],
     }));
     render(<VisitProcessSummaryPage />);
@@ -273,9 +284,66 @@ describe('VisitProcessSummaryPage — Timeline is real, the false "under develop
   });
 });
 
-describe('VisitProcessSummaryPage — Feedback is intentionally unchanged (blocked, not implemented)', () => {
-  it('still shows the original static message — no fake integration was added', async () => {
-    getSummary.mockResolvedValue(mockPage());
+describe('VisitProcessSummaryPage — Feedback renders real per-instance data (HO requirement)', () => {
+  it('renders rating/comment/submitter/target from the real feedback DTO, using the shared type label — not a raw enum', async () => {
+    getSummary.mockResolvedValue(mockPage({
+      permissions: { relation: 'HO', instanceStatus: 'CLOSED' },
+      feedbackSummary: [
+        {
+          feedbackId: 1, feedbackType: 'VISITOR_OVERALL', submitterRole: 'VISITOR',
+          submitterNameSnapshot: 'Nguyễn Văn Khách', targetType: 'VISIT_INSTANCE',
+          targetNameSnapshot: 'Toàn bộ đoàn khách', rating: 5, comment: 'Chuyến thăm rất tốt.',
+          submittedAt: '2026-09-02T10:00:00',
+        },
+        {
+          feedbackId: 2, feedbackType: 'HOST_PARTICIPANT', submitterRole: 'HOST',
+          // Deliberately different from BASE_PERMISSIONS.hostName ('Trần Cảnh', shown in the
+          // always-visible header badge) so this assertion can't accidentally match that instead.
+          submitterNameSnapshot: 'Lê Văn Host', targetType: 'VISIT_PARTICIPANT',
+          targetNameSnapshot: 'Phạm Thị D', rating: 4, comment: null,
+          submittedAt: '2026-09-02T10:05:00',
+        },
+      ],
+    }));
+    render(<VisitProcessSummaryPage />);
+
+    await waitFor(() => expect(screen.getByText('Đánh giá chất lượng (Feedback)')).toBeInTheDocument());
+    await expandSection('Đánh giá chất lượng (Feedback)');
+
+    // VISITOR_OVERALL row: real target/submitter names, translated type label, real comment.
+    await waitFor(() => expect(screen.getByText('Toàn bộ đoàn khách')).toBeInTheDocument());
+    expect(screen.getByText(/Khách đánh giá chuyến thăm/)).toBeInTheDocument();
+    expect(screen.getByText(/Nguyễn Văn Khách/)).toBeInTheDocument();
+    expect(screen.getByText('Chuyến thăm rất tốt.')).toBeInTheDocument();
+
+    // HOST_PARTICIPANT row: real target/submitter names, translated type label.
+    expect(screen.getByText('Phạm Thị D')).toBeInTheDocument();
+    expect(screen.getByText(/Host đánh giá bên tham gia/)).toBeInTheDocument();
+    expect(screen.getByText(/Lê Văn Host/)).toBeInTheDocument();
+
+    // Raw enum values never leak into the DOM.
+    expect(screen.queryByText('VISITOR_OVERALL')).not.toBeInTheDocument();
+    expect(screen.queryByText('HOST_PARTICIPANT')).not.toBeInTheDocument();
+
+    // Read-only: the shared star rating renders disabled radio buttons, no click handler wired.
+    const stars = screen.getAllByRole('radio');
+    expect(stars.length).toBeGreaterThan(0);
+    stars.forEach((star) => expect(star).toBeDisabled());
+  });
+
+  it('shows a genuine "no feedback yet" empty state (not the old fake placeholder) once the instance is past AFTER_VISIT', async () => {
+    getSummary.mockResolvedValue(mockPage({ permissions: { instanceStatus: 'CLOSED' }, feedbackSummary: [] }));
+    render(<VisitProcessSummaryPage />);
+
+    await waitFor(() => expect(screen.getByText('Đánh giá chất lượng (Feedback)')).toBeInTheDocument());
+    await expandSection('Đánh giá chất lượng (Feedback)');
+
+    await waitFor(() => expect(screen.getByText('Chưa có đánh giá nào cho chuyến thăm này.')).toBeInTheDocument());
+    expect(screen.queryByText('Tính năng đang phát triển')).not.toBeInTheDocument();
+  });
+
+  it('keeps the "not yet eligible" message when the instance has not reached AFTER_VISIT/CLOSED', async () => {
+    getSummary.mockResolvedValue(mockPage({ permissions: { instanceStatus: 'DURING_VISIT' }, feedbackSummary: [] }));
     render(<VisitProcessSummaryPage />);
 
     await waitFor(() => expect(screen.getByText('Đánh giá chất lượng (Feedback)')).toBeInTheDocument());
@@ -284,5 +352,28 @@ describe('VisitProcessSummaryPage — Feedback is intentionally unchanged (block
     await waitFor(() =>
       expect(screen.getByText('Feedback chỉ khả dụng sau khi chuyến thăm hoàn tất.')).toBeInTheDocument(),
     );
+  });
+
+  it('never renders sibling-instance feedback — the page only ever has the one instance\'s array to render from', async () => {
+    // Frontend-side proof that isolation is a backend guarantee, not a client-side filter: the
+    // component has no visitInstanceId-vs-item comparison anywhere, it just maps data.feedbackSummary
+    // as given — so a leak could only originate server-side (covered by the backend integration
+    // tests: instance A never receives instance B's rows in the first place).
+    getSummary.mockResolvedValue(mockPage({
+      feedbackSummary: [{
+        feedbackId: 9, feedbackType: 'VISITOR_OVERALL', submitterRole: 'VISITOR',
+        submitterNameSnapshot: 'Khách A', targetType: 'VISIT_INSTANCE', targetNameSnapshot: 'Toàn bộ đoàn khách',
+        rating: 5, comment: null, submittedAt: '2026-09-02T10:00:00',
+      }],
+    }));
+    render(<VisitProcessSummaryPage />);
+
+    await waitFor(() => expect(screen.getByText('Đánh giá chất lượng (Feedback)')).toBeInTheDocument());
+    await expandSection('Đánh giá chất lượng (Feedback)');
+
+    // 'Khách A' sits next to static label text in the same <p> ("Khách đánh giá: Khách A"), so it's
+    // not an isolated text node — match with a regex (substring) instead of an exact string.
+    await waitFor(() => expect(screen.getByText(/Khách A/)).toBeInTheDocument());
+    expect(screen.getAllByRole('radio').length).toBe(5); // exactly one item's worth of stars (1 group of 5)
   });
 });

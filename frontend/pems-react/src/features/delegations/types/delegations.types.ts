@@ -799,6 +799,26 @@ export interface ProcessSummaryPage {
   minutesSummary: MinutesContributionStatus | null;
   mediaSummary: MediaContributionStatus | null;
   newsSummary: NewsContributionStatus | null;
+  /** Every feedback row belonging to THIS instance, all 4 feedback types unfiltered — see
+   * ProcessSummaryFeedbackItem. Server-side scoped and authorized identically to every other
+   * section on this page (Host/HO/Staff-Leader-of-campus); the frontend makes no visibility
+   * decision of its own. */
+  feedbackSummary: ProcessSummaryFeedbackItem[];
+}
+
+/** VISITOR_OVERALL | HOST_DELEGATION_OVERALL | HOST_PARTICIPANT | HOST_LOGISTICS — see
+ * features/feedbacks/constants/feedbackTypes.ts FEEDBACK_TYPE_LABELS for display labels. */
+export interface ProcessSummaryFeedbackItem {
+  feedbackId: number;
+  feedbackType: string;
+  /** VISITOR | HOST. */
+  submitterRole: string;
+  submitterNameSnapshot: string;
+  targetType: string;
+  targetNameSnapshot: string;
+  rating: number;
+  comment?: string | null;
+  submittedAt: string;
 }
 
 export interface ProcessSummaryPermission {

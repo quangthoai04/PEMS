@@ -11,8 +11,10 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Queries.GetVisitInstanceSummary;
 using PEMS.Application.Delegations.Services.VisitFormRead;
+using PEMS.Application.Feedbacks.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
+using PEMS.Domain.Entities.Feedbacks;
 using PEMS.Domain.Entities.Minutes;
 using PEMS.Infrastructure.Persistence;
 using Xunit;
@@ -33,8 +35,12 @@ public sealed class VisitInstanceSummaryV2Tests
 {
     private static string ConnString => PEMS.IntegrationTests.TestInfrastructure.DisposableDatabaseManager.GetDisposableConnectionString("server=localhost;port=3306;database=pems_pr3_test;user=root;password=123456;AllowUserVariables=True;GuidFormat=None");
 
-    private const ulong VisitorOwner = 8, VisitorOther = 22, SlCampus1 = 3, HoUser = 2;
+    private const ulong VisitorOwner = 8, VisitorOther = 22, SlCampus1 = 3, SlCampus2 = 9, HoUser = 2;
     private const ulong Campus1 = 1, Campus2 = 2, Campus3 = 3;
+    // Real seeded IC Staff users on pems_pr3_test, campus-matched — same constants the sibling
+    // Host-scope test files in this folder already use (ConfirmFaceTagsScopeV2Tests,
+    // MinutesMutationScopeV2Tests, NewsContributionConsentV2Tests, etc.).
+    private const ulong HostCampus1 = 101, HostCampus2 = 103;
 
     private static bool? _dbUp;
 
@@ -74,6 +80,55 @@ public sealed class VisitInstanceSummaryV2Tests
     private static FakeUser VisitorUnrelated() => new() { UserId = VisitorOther, RoleCode = RoleCodes.Visitor };
     private static FakeUser StaffLeader(ulong userId, ulong campusId) => new()
         { UserId = userId, RoleCode = RoleCodes.Staff, SubRole = UserSubRoles.Leader, PrimaryCampusId = campusId };
+    // Host eligibility (isHost = instance.CurrentHostUserId == userId) has no role/subrole check of
+    // its own in the handler, but a real Host is always Staff — matching the sibling scope test files.
+    private static FakeUser Host(ulong userId, ulong campusId) => new()
+        { UserId = userId, RoleCode = RoleCodes.Staff, SubRole = UserSubRoles.Staff, PrimaryCampusId = campusId };
+
+    /// <summary>Marks the given instance ASSIGNED with a host, matching what CampusApprovalExecutor
+    /// would have written in one transaction — needed because the shared Seed() helper always leaves
+    /// instances at WAITING_REQUEST_APPROVAL with no host. trg_visit_campuses guards refuse a host on
+    /// a campus that hasn't been decided, so Status/DecidedBy/DecidedAt/HostAssignedBy/HostAssignedAt
+    /// must all move together (same field set VisitInstanceContributionV2Tests.NewInstance uses).</summary>
+    private static async Task AssignHost(ApplicationDbContext db, ulong visitInstanceId, ulong hostUserId, ulong decidedByUserId)
+    {
+        var instance = await db.VisitRequestCampuses.FirstAsync(c => c.VisitInstanceId == visitInstanceId);
+        instance.Status = VisitInstanceStatuses.Assigned;
+        instance.CurrentHostUserId = hostUserId;
+        instance.HostAssignedBy = decidedByUserId;
+        instance.HostAssignedAt = DateTime.Now;
+        instance.DecidedBy = decidedByUserId;
+        instance.DecidedAt = DateTime.Now;
+        instance.DecisionActorRole = "STAFF_LEADER";
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>Writes one real Feedback row exactly the way SubmitVisitFeedbackCommandHandler would —
+    /// VisitInstanceId always set, denormalized submitter/target name snapshots always populated.</summary>
+    private static async Task<Feedback> SeedFeedback(
+        ApplicationDbContext db, ulong visitRequestId, ulong visitInstanceId,
+        ulong submittedByUserId, string submitterRole, string feedbackType, byte rating,
+        string targetNameSnapshot, string? comment = null)
+    {
+        var feedback = new Feedback
+        {
+            VisitRequestId = visitRequestId,
+            VisitInstanceId = visitInstanceId,
+            FeedbackType = feedbackType,
+            SubmittedByUserId = submittedByUserId,
+            SubmitterRole = submitterRole,
+            SubmitterContext = submitterRole == FeedbackSubmitterRoles.Host ? "Host phụ trách" : "Người tạo đoàn",
+            SubmitterNameSnapshot = $"Submitter-{submittedByUserId}",
+            TargetType = FeedbackTargetTypes.VisitInstance,
+            TargetNameSnapshot = targetNameSnapshot,
+            Rating = rating,
+            Comment = comment,
+            SubmittedAt = DateTime.Now,
+        };
+        db.Feedbacks.Add(feedback);
+        await db.SaveChangesAsync();
+        return feedback;
+    }
 
     private static GetVisitInstanceSummaryQueryHandler Handler(ApplicationDbContext db, ICurrentUserService user)
         => new(db, user, new VisitFormReadService(db, user, NullLogger<VisitFormReadService>.Instance));
@@ -373,6 +428,137 @@ public sealed class VisitInstanceSummaryV2Tests
 
         var asStaffLeader = await Run(db, StaffLeader(SlCampus1, Campus1), inst[0].VisitInstanceId);
         Assert.Equal("Noi dung chua phu hop, can chinh sua lai.", asStaffLeader.NewsSummary!.RejectionReason);
+        await tx.RollbackAsync();
+    }
+
+    // ── Feedback: HO access, instance isolation, foreign access, empty state ───
+
+    [Fact]
+    public async Task HO_receives_the_correct_feedback_for_the_instance()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
+        var feedback = await SeedFeedback(
+            db, req.VisitRequestId, inst[0].VisitInstanceId,
+            VisitorOwner, FeedbackSubmitterRoles.Visitor, FeedbackTypes.VisitorOverall,
+            rating: 5, targetNameSnapshot: "V2-DELEG", comment: "Rat tot.");
+
+        var dto = await Run(db, Ho(), inst[0].VisitInstanceId);
+
+        var item = Assert.Single(dto.FeedbackSummary);
+        Assert.Equal(feedback.FeedbackId, item.FeedbackId);
+        Assert.Equal(FeedbackTypes.VisitorOverall, item.FeedbackType);
+        Assert.Equal(5, item.Rating);
+        Assert.Equal("Rat tot.", item.Comment);
+        Assert.Equal("V2-DELEG", item.TargetNameSnapshot);
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task Instance_isolation_sibling_campus_feedback_never_leaks_into_the_requested_instance()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        // Two campuses on the SAME multi-campus request — the only case where a VisitRequestId-only
+        // filter (instead of the real VisitInstanceId filter) would visibly leak.
+        var (req, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1, Campus2 }, mixed: true);
+        var instanceA = inst[0].VisitInstanceId;
+        var instanceB = inst[1].VisitInstanceId;
+
+        await SeedFeedback(db, req.VisitRequestId, instanceA, VisitorOwner,
+            FeedbackSubmitterRoles.Visitor, FeedbackTypes.VisitorOverall, rating: 5, targetNameSnapshot: "Feedback-A");
+        await SeedFeedback(db, req.VisitRequestId, instanceB, VisitorOwner,
+            FeedbackSubmitterRoles.Visitor, FeedbackTypes.VisitorOverall, rating: 1, targetNameSnapshot: "Feedback-B");
+
+        var dtoA = await Run(db, Ho(), instanceA);
+        var itemA = Assert.Single(dtoA.FeedbackSummary);
+        Assert.Equal("Feedback-A", itemA.TargetNameSnapshot);
+        Assert.DoesNotContain(dtoA.FeedbackSummary, f => f.TargetNameSnapshot == "Feedback-B");
+
+        var dtoB = await Run(db, Ho(), instanceB);
+        var itemB = Assert.Single(dtoB.FeedbackSummary);
+        Assert.Equal("Feedback-B", itemB.TargetNameSnapshot);
+        Assert.DoesNotContain(dtoB.FeedbackSummary, f => f.TargetNameSnapshot == "Feedback-A");
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task Current_host_receives_feedback_for_their_own_instance()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
+        await AssignHost(db, inst[0].VisitInstanceId, HostCampus1, decidedByUserId: SlCampus1);
+        await SeedFeedback(db, req.VisitRequestId, inst[0].VisitInstanceId,
+            HostCampus1, FeedbackSubmitterRoles.Host, FeedbackTypes.HostDelegationOverall,
+            rating: 4, targetNameSnapshot: "V2-DELEG");
+
+        var dto = await Run(db, Host(HostCampus1, Campus1), inst[0].VisitInstanceId);
+
+        var item = Assert.Single(dto.FeedbackSummary);
+        Assert.Equal(FeedbackTypes.HostDelegationOverall, item.FeedbackType);
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task Unrelated_host_of_a_different_instance_is_forbidden_and_never_sees_feedback()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1, Campus2 }, mixed: true);
+        // Host of instance B (Campus2) — has no relation to instance A (Campus1) at all.
+        await AssignHost(db, inst[1].VisitInstanceId, HostCampus2, decidedByUserId: SlCampus2);
+        await SeedFeedback(db, req.VisitRequestId, inst[0].VisitInstanceId,
+            VisitorOwner, FeedbackSubmitterRoles.Visitor, FeedbackTypes.VisitorOverall,
+            rating: 3, targetNameSnapshot: "Feedback-A");
+
+        await Assert.ThrowsAsync<ForbiddenException>(
+            () => Run(db, Host(HostCampus2, Campus2), inst[0].VisitInstanceId));
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task Foreign_staff_leader_is_forbidden_and_never_sees_feedback()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1, Campus2 }, mixed: true);
+        await SeedFeedback(db, req.VisitRequestId, inst[0].VisitInstanceId,
+            VisitorOwner, FeedbackSubmitterRoles.Visitor, FeedbackTypes.VisitorOverall,
+            rating: 3, targetNameSnapshot: "Feedback-A");
+
+        // Staff Leader of Campus1 asking about the Campus2 instance of the SAME request — already
+        // proven forbidden generally by StaffLeader_of_campusA_cannot_access_campusB_instance; this
+        // asserts the same refusal holds even when the target instance genuinely has feedback data.
+        await Assert.ThrowsAsync<ForbiddenException>(
+            () => Run(db, StaffLeader(SlCampus1, Campus1), inst[1].VisitInstanceId));
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task Empty_feedback_is_a_200_with_an_empty_list_never_a_403()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (_, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
+
+        var dto = await Run(db, Ho(), inst[0].VisitInstanceId);
+
+        Assert.NotNull(dto.FeedbackSummary);
+        Assert.Empty(dto.FeedbackSummary);
         await tx.RollbackAsync();
     }
 

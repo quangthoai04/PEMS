@@ -32,6 +32,36 @@ public sealed class ProcessSummaryPageDto
     public MinutesContributionDto? MinutesSummary { get; set; }
     public MediaContributionDto? MediaSummary { get; set; }
     public NewsContributionDto? NewsSummary { get; set; }
+
+    /// <summary>
+    /// Every feedback row genuinely belonging to THIS instance — all 4 feedback_type values
+    /// (VISITOR_OVERALL / HOST_DELEGATION_OVERALL / HOST_PARTICIPANT / HOST_LOGISTICS), unfiltered,
+    /// matching how the closest existing reporting read models (ViewFeedbackSummaryQueryHandler,
+    /// SearchAndFilterFeedbackQueryHandler) already treat feedback as one pool for oversight purposes.
+    /// Gated by this page's own top-level authorization (Host/HO/Staff-Leader-of-campus) — no separate
+    /// or narrower Feedback-specific authorization exists here, same as every other section on this
+    /// read-only page.
+    /// </summary>
+    public List<ProcessSummaryFeedbackItemDto> FeedbackSummary { get; set; } = new();
+}
+
+public sealed class ProcessSummaryFeedbackItemDto
+{
+    public ulong FeedbackId { get; set; }
+    /// <summary>VISITOR_OVERALL | HOST_DELEGATION_OVERALL | HOST_PARTICIPANT | HOST_LOGISTICS.</summary>
+    public string FeedbackType { get; set; } = default!;
+    /// <summary>VISITOR | HOST.</summary>
+    public string SubmitterRole { get; set; } = default!;
+    public string SubmitterNameSnapshot { get; set; } = default!;
+    /// <summary>VISIT_REQUEST | VISIT_INSTANCE | VISIT_PARTICIPANT | GUEST_MEMBER | LOGISTICS_ITEM |
+    /// LOGISTICS_HANDOVER | USER | DEPARTMENT. Null-target types (VISIT_REQUEST/VISIT_INSTANCE) are
+    /// the "overall" ratings; every other value names a specific person/item, carried in
+    /// TargetNameSnapshot.</summary>
+    public string TargetType { get; set; } = default!;
+    public string TargetNameSnapshot { get; set; } = default!;
+    public byte Rating { get; set; }
+    public string? Comment { get; set; }
+    public DateTime SubmittedAt { get; set; }
 }
 
 public sealed class ProcessSummaryPermissionDto

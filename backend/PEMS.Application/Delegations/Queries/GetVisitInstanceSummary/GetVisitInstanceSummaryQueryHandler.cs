@@ -280,9 +280,33 @@ public sealed class GetVisitInstanceSummaryQueryHandler : IRequestHandler<GetVis
             CanCurrentUserEdit = false,
         };
 
+        // ── Feedback (all 4 types, unfiltered — see ProcessSummaryFeedbackItemDto for why). Every
+        // Feedback row's VisitInstanceId is set unconditionally by its one and only writer
+        // (SubmitVisitFeedbackCommandHandler), so this is a direct, exact instance filter — never a
+        // VisitRequestId-only scope that could leak a sibling campus's feedback on a multi-campus
+        // request. Every display field is already denormalized on the row (submitter/target name
+        // snapshots), so this is a single flat query with no joins and no per-row lookups. ──
+        var feedbackSummary = await _db.Feedbacks.AsNoTracking()
+            .Where(f => f.VisitInstanceId == instance.VisitInstanceId)
+            .OrderByDescending(f => f.SubmittedAt)
+            .Select(f => new ProcessSummaryFeedbackItemDto
+            {
+                FeedbackId = f.FeedbackId,
+                FeedbackType = f.FeedbackType,
+                SubmitterRole = f.SubmitterRole,
+                SubmitterNameSnapshot = f.SubmitterNameSnapshot,
+                TargetType = f.TargetType,
+                TargetNameSnapshot = f.TargetNameSnapshot,
+                Rating = f.Rating,
+                Comment = f.Comment,
+                SubmittedAt = f.SubmittedAt,
+            })
+            .ToListAsync(cancellationToken);
+
         return new ProcessSummaryPageDto
         {
             VisitRequestId = visit.VisitRequestId,
+            FeedbackSummary = feedbackSummary,
             Permissions = new ProcessSummaryPermissionDto
             {
                 CanViewSummaryPage = true,
