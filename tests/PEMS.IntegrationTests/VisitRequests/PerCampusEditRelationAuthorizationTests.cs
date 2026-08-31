@@ -568,11 +568,17 @@ public sealed class PerCampusEditRelationAuthorizationTests
     }
 
     /// <summary>
-    /// §31 — the 72-hour floor is the campus LEADER's to pass, and only after saying so. Unconfirmed is a
-    /// question (409), not a refusal; confirmed applies and leaves its own audit row.
+    /// PEMS_SHORT_NOTICE_72H_ALL_REGISTRANT_MUTATIONS: an internal (Staff/Staff Leader) account editing
+    /// a campus of THEIR OWN request may file a schedule inside the 72-hour floor automatically — no
+    /// confirmation dialog, because they are the person the floor protects and filing it short on their
+    /// own request satisfies the rule rather than bypassing it. True for the campus's own leader
+    /// (StaffLeader, who ALSO keeps the pre-existing leader-only privileges) and, just as much, for a
+    /// plain Staff registrant who leads no campus at all — the capability is REGISTRANT-shaped, not
+    /// leader-shaped. (Superseded the old campus-leader-only confirmation dialog, which this same pairing
+    /// — leader AND registrant — was the sole caller of; see VisitMutationPolicy.IsShortNoticeEligible.)
     /// </summary>
     [Fact]
-    public async Task Only_the_campus_leader_may_file_a_schedule_inside_the_floor_and_only_after_confirming()
+    public async Task An_internal_registrant_may_file_a_schedule_inside_the_floor_with_no_confirmation()
     {
         RequireDb();
         var (requestId, instanceId) = (0UL, 0UL);
@@ -583,45 +589,71 @@ public sealed class PerCampusEditRelationAuthorizationTests
             // round-trip comparison below would fail on precision rather than on the rule being tested.
             var tooSoon = TrimToSecond(Now.AddHours(VisitMutationPolicy.MinScheduleLeadHours).AddMinutes(-30));
 
-            // Unconfirmed → asked, not refused, and nothing applied.
-            var askPayload = await PayloadAsync(instanceId, "Đoàn dời gần", tooSoon);
-            using (var db = NewContext())
-            {
-                var ex = await Assert.ThrowsAsync<ConflictException>(() =>
-                    Handler(db, StaffLeader(LeaderHn, CampusHn)).Handle(
-                        new UpdatePendingVisitInstanceV2Command(
-                            requestId, instanceId, askPayload, false, null),
-                        CancellationToken.None));
-                Assert.Equal(VisitMutationErrorCodes.LeadTimeOverrideConfirmationRequired, ex.ErrorCode);
-            }
-
-            // Confirmed → applied, with the override recorded as a decision of its own.
+            // The campus's own Staff Leader, who is also its registrant: applied immediately, no 409,
+            // no OverrideLeadTimeConfirmed needed at all — sent false to prove the dialog is never asked.
             using (var db = NewContext())
                 await Handler(db, StaffLeader(LeaderHn, CampusHn)).Handle(
                     new UpdatePendingVisitInstanceV2Command(
-                        requestId, instanceId, await PayloadAsync(instanceId, "Đoàn dời gần", tooSoon), true, null),
+                        requestId, instanceId, await PayloadAsync(instanceId, "Đoàn dời gần", tooSoon), false, null),
                     CancellationToken.None);
 
-            using var check = NewContext();
-            var instance = await check.VisitRequestCampuses.AsNoTracking().SingleAsync(c => c.VisitInstanceId == instanceId);
-            Assert.Equal(tooSoon, instance.PlannedStartAt);
-            Assert.True(await check.AuditLogs.AsNoTracking().AnyAsync(a =>
-                a.VisitInstanceId == instanceId && a.Action == VisitAuditActions.LeadTimeOverride));
+            using (var check = NewContext())
+            {
+                var instance = await check.VisitRequestCampuses.AsNoTracking().SingleAsync(c => c.VisitInstanceId == instanceId);
+                Assert.Equal(tooSoon, instance.PlannedStartAt);
+                // The audit trail survives the new automatic door exactly as it did the old confirmed one.
+                Assert.True(await check.AuditLogs.AsNoTracking().AnyAsync(a =>
+                    a.VisitInstanceId == instanceId && a.Action == VisitAuditActions.LeadTimeOverride));
+            }
 
-            // The REGISTRANT side cannot do the same thing, flag or no flag — the override is a relation.
+            // A plain Staff registrant — leads no campus anywhere — gets exactly the same automatic pass
+            // on their OWN request. The old rule refused this actor outright (InvalidVisitTime); the new
+            // one is registrant-shaped, not leader-shaped, so this is the extension the plan requires.
             var (otherRequestId, otherInstanceId) = await CreatePendingAsync(IcStaffHn);
             try
             {
                 var registrantPayload = await PayloadAsync(otherInstanceId, "Đoàn dời gần", tooSoon);
                 using var db = NewContext();
-                var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
-                    Handler(db, Staff(IcStaffHn, CampusHn)).Handle(
-                        new UpdatePendingVisitInstanceV2Command(
-                            otherRequestId, otherInstanceId, registrantPayload, true, null),
-                        CancellationToken.None));
-                Assert.Equal(VisitRequestErrorCodes.InvalidVisitTime, ex.ErrorCode);
+                await Handler(db, Staff(IcStaffHn, CampusHn)).Handle(
+                    new UpdatePendingVisitInstanceV2Command(
+                        otherRequestId, otherInstanceId, registrantPayload, false, null),
+                    CancellationToken.None);
+
+                var instance = await InstanceOfAsync(otherInstanceId);
+                Assert.Equal(tooSoon, instance.PlannedStartAt);
             }
             finally { await CleanupAsync(otherRequestId); }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// The requester side that is NOT internal keeps the floor exactly as before — short notice is
+    /// Staff/Staff Leader only. Covered end-to-end at the service level by
+    /// <see cref="UpdatePendingVisitInstanceV2ServiceTests.The_requester_side_cannot_move_a_schedule_inside_the_floor"/>;
+    /// this is the handler-level twin, proving the real actor-resolution wiring (not an injected flag)
+    /// still refuses a non-internal registrant.
+    /// </summary>
+    [Fact]
+    public async Task A_visitor_registrant_still_cannot_move_a_schedule_inside_the_floor()
+    {
+        RequireDb();
+        var (requestId, instanceId) = (0UL, 0UL);
+        try
+        {
+            (requestId, instanceId) = await CreatePendingAsync(ExternalContact); // VISITOR seed — see class header
+            var tooSoon = TrimToSecond(Now.AddHours(VisitMutationPolicy.MinScheduleLeadHours).AddMinutes(-30));
+            var payload = await PayloadAsync(instanceId, "Đoàn dời gần", tooSoon);
+
+            using var db = NewContext();
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                Handler(db, new FakeUser(ExternalContact)).Handle(
+                    new UpdatePendingVisitInstanceV2Command(requestId, instanceId, payload, false, null),
+                    CancellationToken.None));
+            Assert.Equal(VisitRequestErrorCodes.InvalidVisitTime, ex.ErrorCode);
+
+            var instanceAfter = await InstanceOfAsync(instanceId);
+            Assert.NotEqual(tooSoon, instanceAfter.PlannedStartAt);
         }
         finally { await CleanupAsync(requestId); }
     }
@@ -819,12 +851,18 @@ public sealed class PerCampusEditRelationAuthorizationTests
     }
 
     /// <summary>
-    /// The 72-hour registration floor applies to them like any other requester. The override exists to
-    /// protect the leader who has to PREPARE this campus — a leader of somewhere else is not that
-    /// person, so their schedule inside the floor is a plain refusal with no "continue anyway" offered.
+    /// PEMS_SHORT_NOTICE_72H_ALL_REGISTRANT_MUTATIONS superseded this case's old outcome. The
+    /// pre-existing campus-leader override (<c>ActsAsCampusLeader</c>) genuinely was refused here, because
+    /// it is scoped to the leader OF THIS campus and this actor leads a different one. But the NEW
+    /// short-notice capability is scoped to the REQUEST, not the campus: this actor is still an internal
+    /// Staff Leader who is still the registrant of the request THIS campus belongs to, and that pairing is
+    /// exactly what <c>VisitMutationPolicy.IsShortNoticeEligible</c> grants — automatically, with no
+    /// confirmation. What they still do NOT get is "Lưu và duyệt" (see
+    /// <see cref="A_staff_leader_of_another_campus_may_not_save_and_approve_their_own_request"/>, unaffected
+    /// by this change): approval authority stays scoped to the campus's own leader.
     /// </summary>
     [Fact]
-    public async Task A_staff_leader_of_another_campus_gets_no_lead_time_override_on_their_own_request()
+    public async Task A_staff_leader_of_another_campus_still_gets_short_notice_on_their_own_request()
     {
         RequireDb();
         var (requestId, instanceId) = (0UL, 0UL);
@@ -832,21 +870,17 @@ public sealed class PerCampusEditRelationAuthorizationTests
         {
             (requestId, instanceId) = await CreatePendingAsync(LeaderHcm);
             var tooSoon = TrimToSecond(Now.AddHours(VisitMutationPolicy.MinScheduleLeadHours).AddMinutes(-30));
-            // Sent WITH the confirmation flag already set, which is the strongest form of the question:
-            // the flag is honoured for the campus's own leader-registrant and means nothing here.
             var payload = await PayloadAsync(instanceId, "Đoàn dời gần", tooSoon);
 
+            // No OverrideLeadTimeConfirmed needed — sent false to prove the old confirmation door plays
+            // no part in this: the actor is not this campus's leader, yet the edit still applies.
             using (var db = NewContext())
-            {
-                var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
-                    Handler(db, StaffLeader(LeaderHcm, 2)).Handle(
-                        new UpdatePendingVisitInstanceV2Command(requestId, instanceId, payload, true, null),
-                        CancellationToken.None));
-                Assert.Equal(VisitRequestErrorCodes.InvalidVisitTime, ex.ErrorCode);
-            }
+                await Handler(db, StaffLeader(LeaderHcm, 2)).Handle(
+                    new UpdatePendingVisitInstanceV2Command(requestId, instanceId, payload, false, null),
+                    CancellationToken.None);
 
             var instance = await InstanceOfAsync(instanceId);
-            Assert.NotEqual(tooSoon, instance.PlannedStartAt);
+            Assert.Equal(tooSoon, instance.PlannedStartAt);
         }
         finally { await CleanupAsync(requestId); }
     }

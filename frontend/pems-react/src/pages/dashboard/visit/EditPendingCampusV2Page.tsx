@@ -36,6 +36,7 @@ import {
 } from '../../../features/visit-request/utils/visitV2Actions';
 import AssignHostPicker from '../../../features/visit-request/components/v2/AssignHostPicker';
 import { focusFirstInvalidField } from '../../../features/visit-request/utils/formErrorNavigation';
+import { useAuthContext } from '../../../shared/auth/AuthContext';
 
 /**
  * Edits ONE campus that is still waiting for its decision.
@@ -47,13 +48,19 @@ import { focusFirstInvalidField } from '../../../features/visit-request/utils/fo
  * and nothing else.</p>
  *
  * <p>The registrant and this campus's operational contact edit within the ordinary rules — a Staff
- * Leader account among them, on a request they filed. Two extra privileges live on this screen and
- * belong to ONE actor, the Staff Leader of <i>this</i> campus who is also the registrant: filing a start
- * inside the 72-hour registration floor (the backend asks them to confirm rather than refusing) and
- * approving in the same action, which is one transaction rather than a save followed by a hopeful
- * approve. A leader who filed a request for a campus they do NOT lead gets the ordinary screen and
- * neither privilege; a leader looking at somebody else's request is not offered the screen at all and
- * decides that campus by approving or rejecting it, which they keep in full.</p>
+ * Leader account among them, on a request they filed. "Lưu và duyệt" belongs to ONE actor only, the
+ * Staff Leader of <i>this</i> campus who is also the registrant (`canSaveAndApprove`); a leader who
+ * filed a request for a campus they do NOT lead gets the ordinary screen and no such button, and a
+ * leader looking at somebody else's request is not offered the screen at all and decides that campus by
+ * approving or rejecting it, which they keep in full.</p>
+ *
+ * <p>Filing a start inside the 72-hour registration floor is a WIDER door
+ * (PEMS_SHORT_NOTICE_72H_ALL_REGISTRANT_MUTATIONS plan): any internal (Staff/Staff Leader) account
+ * editing a campus of THEIR OWN request may do it, automatically and with no confirmation, whether or
+ * not they lead this particular campus — the capability is registrant-shaped, not leader-shaped. The
+ * campus's own Staff-Leader-registrant additionally carries a SEPARATE, narrower confirmation-gated
+ * override for the same floor, kept for its own sake but redundant in practice: every actor who could
+ * ever reach it already gets the wider, silent door first. See `allowShortNotice` below.</p>
  *
  * <p>Whether any of that is allowed is the backend's answer, always: the screen renders on the
  * EDIT_PENDING_CAMPUS action the read model granted, and every refusal it shows is one the API
@@ -69,6 +76,7 @@ export default function EditPendingCampusV2Page() {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation(['visitRequestV2', 'validation']);
   const { campuses, loading: campusesLoading } = useRegistrationCampuses();
+  const { effectiveRole } = useAuthContext();
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -80,6 +88,12 @@ export default function EditPendingCampusV2Page() {
   const [campus, setCampus] = useState<ResolvedCampusVisit | null>(null);
   const [registrant, setRegistrant] = useState<ResolvedVisitForm['registrant'] | null>(null);
   const [requestCode, setRequestCode] = useState('');
+  /**
+   * Whether the SIGNED-IN viewer is this request's registrant — the backend's OWN verdict
+   * (`data.viewer.relation === 'REGISTRANT'`, from VisitRequestOwnership.IsRegistrant, keyed on
+   * userId), not a client-side email/identity comparison. See `allowShortNotice` below.
+   */
+  const [viewerIsRegistrant, setViewerIsRegistrant] = useState(false);
   /** Set when the backend asked the Staff Leader to confirm a start inside the 72-hour floor. */
   const [overridePrompt, setOverridePrompt] = useState<string | null>(null);
   /** Open while the Staff Leader is choosing the Host for a "Lưu và duyệt". */
@@ -95,14 +109,27 @@ export default function EditPendingCampusV2Page() {
   const pendingApproveAfterSaveRef = useRef<V2ApproveAfterSave | null>(null);
 
   /**
-   * The backend's verdict on the two leader-only privileges INSIDE this screen: passing the 72-hour
-   * floor, and "Lưu và duyệt". True only for the Staff Leader of THIS campus who ALSO filed the
-   * request — so it is not the question "is this user a Staff Leader", and it is false for a leader who
-   * registered a visit to a campus they do not lead even though they are editing it right now. The
-   * browser must never re-derive any of that from a role on the token: that is exactly how somebody
-   * would be shown a button the API then refuses.
+   * The backend's verdict on ONE of the two leader-only privileges INSIDE this screen: "Lưu và duyệt"
+   * (see `canSaveAndApprove` below for that one's own verdict). True only for the Staff Leader of THIS
+   * campus who ALSO filed the request — so it is not the question "is this user a Staff Leader", and it
+   * is false for a leader who registered a visit to a campus they do not lead even though they are
+   * editing it right now. The browser must never re-derive any of that from a role on the token: that is
+   * exactly how somebody would be shown a button the API then refuses.
    */
   const actsAsCampusLeader = campus?.canOverrideScheduleLeadTime === true;
+
+  /**
+   * The OTHER door past the 72-hour floor (PEMS_SHORT_NOTICE_72H_ALL_REGISTRANT_MUTATIONS plan) —
+   * broader than `actsAsCampusLeader` on purpose: an internal (Staff/Staff Leader) account editing a
+   * campus of THEIR OWN request is exempt whether or not they lead THIS particular campus, because the
+   * backend capability (`VisitMutationPolicy.IsShortNoticeEligible`) is registrant-shaped, not
+   * leader-shaped. `viewerIsRegistrant` is the backend's own relation verdict, not a client-side
+   * identity comparison — this is purely a UX pre-check to avoid showing an error the backend will not
+   * raise; the backend re-derives and enforces the real capability independently from the actor's own
+   * session, never from anything sent here.
+   */
+  const isInternalActor = effectiveRole === 'STAFF_LEADER' || effectiveRole === 'STAFF';
+  const allowShortNotice = actsAsCampusLeader || (isInternalActor && viewerIsRegistrant);
 
   /**
    * Whether "Lưu và duyệt" itself is offered — its OWN backend verdict, not a proxy read off
@@ -163,6 +190,7 @@ export default function EditPendingCampusV2Page() {
       setCampus(target);
       setRegistrant(data.registrant);
       setRequestCode(data.requestCode);
+      setViewerIsRegistrant(data.viewer.relation === 'REGISTRANT');
     } catch (err) {
       if (axios.isAxiosError(err) && err.response?.status === 404) setLoadError(t('visitRequestV2:detail.notfound'));
       else if (axios.isAxiosError(err) && err.response?.status === 403) setLoadError(t('visitRequestV2:edit.forbidden'));
@@ -270,11 +298,16 @@ export default function EditPendingCampusV2Page() {
 
   /**
    * The 72-hour floor, checked here rather than in the resolver: it applies ONLY when this edit moves
-   * the schedule, and never to the actor the backend lets past it — for them it asks for a confirmation
-   * instead, which is a conversation the resolver cannot have.
+   * the schedule, and never to an actor the backend lets past it. Two such actors, two different
+   * onward paths: `actsAsCampusLeader` gets a CONFIRMATION dialog (the backend still asks, via
+   * LEAD_TIME_OVERRIDE_CONFIRMATION_REQUIRED), while `allowShortNotice` — the broader,
+   * registrant-shaped capability — is a silent pass, because the backend never asks that actor to
+   * confirm at all (VisitMutationPolicy.IsShortNoticeEligible short-circuits before the confirmation
+   * branch). Excluding BOTH here is what keeps this client-side check from raising an error the
+   * backend would never raise.
    */
   const scheduleLeadTimeError = (): string | null => {
-    if (!campus || actsAsCampusLeader) return null;
+    if (!campus || allowShortNotice) return null;
     const cv = form.getValues('campusVisits')[0];
     if (!cv) return null;
     const newStart = new Date(cv.startDatetime);

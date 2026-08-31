@@ -3,7 +3,7 @@
     "title": "Cơ sở này đã bị từ chối",
     "reason": "Lý do",
     "open": "Chỉnh sửa & gửi lại cơ sở này",
-    "leadTimeHint": "Thời gian bắt đầu mới phải cách hiện tại ít nhất 72 giờ.",
+    "leadTimeHint": "Thông thường, thời gian bắt đầu mới phải cách hiện tại ít nhất 72 giờ; một số tài khoản nội bộ có thể được miễn trên chính đơn của mình. Quy tắc chính xác cho tài khoản của bạn sẽ được áp dụng khi gửi.",
     "submit": "Gửi lại cơ sở này",
     "cancel": "Hủy",
     "success": "Đã gửi lại yêu cầu tại cơ sở này.",

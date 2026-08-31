@@ -34,6 +34,24 @@ vi.mock('../hooks/useRegistrationCampuses', () => ({
   }),
 }));
 
+/**
+ * A live variable rather than a fixed return value: the page re-renders several times per test
+ * (load → hydrate → user interaction), and `useAuthContext()` is read on every one of them.
+ *
+ * Default: a non-internal viewer — every existing test in this file exercises the pre-existing 72-hour
+ * floor, so the new short-notice capability (PEMS_SHORT_NOTICE_72H_ALL_REGISTRANT_MUTATIONS added the
+ * client-side `useAuthContext()` read this page now does) must stay OFF here; before that this file
+ * needed no AuthProvider/mock at all. The short-notice-specific test below reassigns this before
+ * rendering; `beforeEach` restores it.
+ */
+let mockAuthContextValue: { user: { email: string }; effectiveRole: string | null } = {
+  user: { email: 'viewer-not-internal@example.com' },
+  effectiveRole: 'VISITOR',
+};
+vi.mock('../../../shared/auth/AuthContext', () => ({
+  useAuthContext: () => mockAuthContextValue,
+}));
+
 // Excel parsing itself is out of scope here — only what a SUCCESSFUL import report does matters for
 // the replace-block guard, so the parser is mocked to return one directly rather than exercising real
 // XLSX binary parsing.
@@ -99,7 +117,37 @@ const renderAt = (mode: 'edit' | 'resubmit', path = `/dashboard/visit/v2/5/${mod
   );
 
 describe('EditVisitRequestV2Page', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAuthContextValue = { user: { email: 'viewer-not-internal@example.com' }, effectiveRole: 'VISITOR' };
+  });
+
+  /**
+   * PEMS_SHORT_NOTICE_72H_ALL_REGISTRANT_MUTATIONS: an internal (Staff) registrant submits the SAME
+   * fixture schedule (`campus()`'s fixed `2026-09-01T09:00:00`, ~1 day out — well inside 72h of real
+   * wall-clock "now") that the default VISITOR-role tests in this file are held to, and the save must
+   * go through with no local validation error (`minAdvanceHours` is 0 for this actor, not 72). Proves
+   * the schema-level block is lifted for this actor rather than merely not-yet-triggered.
+   */
+  it('lets an internal (Staff) registrant save a schedule inside 72 hours with no local error', async () => {
+    mockAuthContextValue = { user: { email: 'staff-registrant@example.com' }, effectiveRole: 'STAFF' };
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(form());
+    vi.mocked(updatePendingVisitRequestV2).mockResolvedValue({
+      visitRequestId: 5, status: 'PENDING_APPROVAL', visitScope: 'SINGLE_CAMPUS',
+      hasMixedCampusDetails: false, requestRowVersion: 8, instances: [], message: 'Đã cập nhật',
+    } as never);
+
+    renderAt('edit');
+    expect(await screen.findByDisplayValue('Đoàn HN')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Save changes/ }));
+
+    // The API call itself is the proof: react-hook-form's handleSubmit only reaches the SUBMIT
+    // handler (which calls updatePendingVisitRequestV2) when the resolver found zero errors — a
+    // schema still enforcing 72h here would have gone down the invalid path instead and never called
+    // this at all (see the sibling VISITOR-role tests in this file, which hit exactly that today).
+    await waitFor(() => expect(updatePendingVisitRequestV2).toHaveBeenCalledTimes(1));
+  });
 
   it('hydrates and submits a pending-edit payload carrying request + per-instance row versions', async () => {
     vi.mocked(getVisitRequestFormV2).mockResolvedValue(form());

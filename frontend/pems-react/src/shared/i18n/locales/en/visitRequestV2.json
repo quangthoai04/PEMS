@@ -3,7 +3,7 @@
     "title": "This campus was declined",
     "reason": "Reason",
     "open": "Edit & resubmit this campus",
-    "leadTimeHint": "The new start time must be at least 72 hours from now.",
+    "leadTimeHint": "The new start time usually needs to be at least 72 hours from now; some internal accounts may be exempt on their own request. The exact rule for your account is enforced on submit.",
     "submit": "Resubmit this campus",
     "cancel": "Cancel",
     "success": "This campus has been resubmitted for review.",

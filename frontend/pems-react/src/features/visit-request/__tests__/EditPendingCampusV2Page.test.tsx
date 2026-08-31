@@ -35,6 +35,26 @@ vi.mock('../hooks/useRegistrationCampuses', () => ({
   }),
 }));
 
+/**
+ * A live variable rather than `mockReturnValueOnce`: the page re-renders several times per test
+ * (load → hydrate → user interaction), and `useAuthContext()` is read on every one of them — a
+ * "once" queued value would answer the FIRST render and silently fall back to the default on the
+ * second, which is not what a test setting the role for its whole run means.
+ *
+ * Default: a non-internal viewer — every existing test in this file exercises the OLD
+ * `actsAsCampusLeader`-only floor, so `allowShortNotice` must reduce to exactly that here
+ * (PEMS_SHORT_NOTICE_72H_ALL_REGISTRANT_MUTATIONS added the client-side `useAuthContext()` read
+ * this page now does; before that this file needed no AuthProvider/mock at all). The
+ * short-notice-specific tests below reassign this before rendering and `beforeEach` restores it.
+ */
+let mockAuthContextValue: { user: { email: string }; effectiveRole: string | null } = {
+  user: { email: 'viewer-not-internal@example.com' },
+  effectiveRole: 'VISITOR',
+};
+vi.mock('../../../shared/auth/AuthContext', () => ({
+  useAuthContext: () => mockAuthContextValue,
+}));
+
 import { getVisitRequestFormV2, updatePendingVisitInstance } from '../api/visitRequestV2Api';
 import { delegationsApi } from '../../delegations/api/delegationsApi';
 import { showInfoToast } from '../../../shared/utils/toast';
@@ -114,7 +134,10 @@ const axiosError = (status: number, errorCode: string, message = 'nope') =>
   });
 
 describe('EditPendingCampusV2Page', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAuthContextValue = { user: { email: 'viewer-not-internal@example.com' }, effectiveRole: 'VISITOR' };
+  });
 
   /**
    * The dead end this screen removes. On a mixed request the whole-request edit is refused because a
@@ -332,6 +355,37 @@ describe('EditPendingCampusV2Page', () => {
 
     await waitFor(() => expect(startDateInput.closest('[data-field-error="true"]')).not.toBeNull());
     await waitFor(() => expect(document.activeElement).toBe(startDateInput));
+  });
+
+  /**
+   * PEMS_SHORT_NOTICE_72H_ALL_REGISTRANT_MUTATIONS: a plain STAFF registrant — NOT this campus's
+   * leader (`canOverrideScheduleLeadTime` is absent from the fixture, so `actsAsCampusLeader` is
+   * false) — moves the schedule inside the 72-hour floor and is let through with no local error and
+   * no confirmation step, because `allowShortNotice` is granted by `isInternalActor && viewerIsRegistrant`
+   * alone. Proves the client-side pre-check does not block what the backend now permits.
+   */
+  it('lets an internal (non-leader) registrant move a schedule inside 72 hours with no local error', async () => {
+    mockAuthContextValue = { user: { email: 'staff-registrant@example.com' }, effectiveRole: 'STAFF' };
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm());
+    vi.mocked(updatePendingVisitInstance).mockResolvedValue({
+      visitRequestId: 5, visitInstanceId: 2, visitRequestStatus: 'PARTIALLY_APPROVED',
+      visitInstanceStatus: 'WAITING_REQUEST_APPROVAL', instanceRowVersion: 5, requestRowVersion: 8,
+      approved: false, hostUserId: null, message: 'Đã cập nhật',
+    } as never);
+
+    renderPage();
+    await screen.findByDisplayValue('Đoàn HCM');
+
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const tomorrow = new Date(Date.now() + 24 * 3600_000);
+    const isoDate = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}`;
+    fireEvent.change(screen.getByTestId('campus-0-start-date'), { target: { value: isoDate } });
+
+    fireEvent.click(screen.getByTestId('pending-campus-save'));
+
+    await waitFor(() => expect(updatePendingVisitInstance).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('pending-campus-leadtime-error')).not.toBeInTheDocument();
+    expect(vi.mocked(updatePendingVisitInstance).mock.calls[0][2].overrideLeadTimeConfirmed).toBe(false);
   });
 
   /**

@@ -38,6 +38,7 @@ import { FormSection } from '../../../features/visit-request/components/shared/F
 import { useRegistrationCampuses } from '../../../features/visit-request/hooks/useRegistrationCampuses';
 import { getApiErrorMessage, showMessageErrorToast } from '../../../shared/utils/toast';
 import { commitFieldValue } from '../../../shared/utils/formRevalidate';
+import { useAuthContext } from '../../../shared/auth/AuthContext';
 
 type Mode = 'edit' | 'resubmit';
 
@@ -66,6 +67,7 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation(['visitRequestV2', 'validation']);
   const { campuses, loading: campusesLoading } = useRegistrationCampuses();
+  const { effectiveRole } = useAuthContext();
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -78,6 +80,17 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
   const [applyPrompt, setApplyPrompt] = useState<{ sourceIndex: number; overwritten: string[] } | null>(null);
   const requestRowVersionRef = useRef<number>(0);
   const cardRefs = useRef(new Map<string, HTMLDivElement | null>());
+  /**
+   * Whether the SIGNED-IN viewer is this request's registrant — set once `hydrate` runs, straight off
+   * `data.viewer.relation`, the backend's OWN verdict (VisitRequestOwnership.IsRegistrant, keyed on
+   * userId — see VisitFormReadService's "REGISTRANT" scope). Needed for the short-notice capability
+   * below BEFORE the form (and its resolver-bound schema) exists, so it lives in its own state rather
+   * than being read off the form. Not an email/identity comparison on this end at all: the backend
+   * already resolved the stable-ID question, and re-deriving it client-side from `user.email` vs
+   * `registrant.email` would only add a second, weaker way to get the same answer wrong (whitespace,
+   * casing, a registrant snapshot that legitimately differs from the account's current profile email).
+   */
+  const [viewerIsRegistrant, setViewerIsRegistrant] = useState(false);
 
   /**
    * Keyed by clientKey, bumped whenever a copy/apply-to-all overwrites that card's content.
@@ -104,14 +117,24 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
     ? Math.min(campuses.length, V2_MAX_CAMPUSES)
     : V2_MAX_CAMPUSES;
 
+  // ── Short-notice capability (PEMS_SHORT_NOTICE_72H_ALL_REGISTRANT_MUTATIONS plan) ──
+  // Both `mode`s this page serves — pending edit and resubmit — are registrant-only screens (the
+  // backend 403s anyone else), so the only open question is whether the SIGNED-IN account is internal.
+  // `viewerIsRegistrant` starts false (nothing loaded yet) so the floor defaults to 72h rather than
+  // briefly appearing open before the real answer is known — mirrors VisitRequestFormV2's
+  // isInternalActor/isSelfRegistrant for create, but keyed on the backend's own relation verdict
+  // instead of a client-side email comparison (see viewerIsRegistrant's own comment).
+  const isInternalActor = effectiveRole === 'STAFF_LEADER' || effectiveRole === 'STAFF';
+  const minAdvanceHours = isInternalActor && viewerIsRegistrant ? 0 : V2_MIN_ADVANCE_HOURS_EDIT;
+
   const schema = useMemo(
     () => buildVisitRequestV2Schema(
-      V2_MIN_ADVANCE_HOURS_EDIT,
+      minAdvanceHours,
       (key, opts) => t(key, { ns: 'validation', ...opts }),
       campusLimit,
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [t, i18n.language, campusLimit],
+    [t, i18n.language, campusLimit, minAdvanceHours],
   );
 
   const form = useForm<VisitRequestV2Schema>({
@@ -127,6 +150,7 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
     requestRowVersionRef.current = expectedRequestRowVersion;
     form.reset(values);
     setOpenKeys(new Set(values.campusVisits.length ? [values.campusVisits[0].clientKey] : []));
+    setViewerIsRegistrant(data.viewer.relation === 'REGISTRANT');
   }, [form]);
 
   const load = useCallback(async () => {
@@ -470,7 +494,7 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
                     showErrors={showErrors}
                     // The same floor the schema above was built with — and the same one create uses,
                     // so the picker, the resolver and the backend cannot disagree.
-                    minAdvanceHours={V2_MIN_ADVANCE_HOURS_EDIT}
+                    minAdvanceHours={minAdvanceHours}
                   />
                 </div>
               );

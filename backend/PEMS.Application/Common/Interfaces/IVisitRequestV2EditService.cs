@@ -29,11 +29,22 @@ public sealed record V2EditResult(string VisitScope, bool HasMixed, int RequestR
 /// </summary>
 public interface IVisitRequestV2EditService
 {
+    /// <param name="allowShortNotice">
+    /// The internal-registrant short-notice capability (<see cref="PEMS.Domain.Policies.VisitMutationPolicy.IsShortNoticeEligible"/>),
+    /// resolved by the caller from the actor's role and their relation to THIS request — never from the
+    /// payload. Defaults to <c>false</c> so every existing caller keeps enforcing the 72-hour floor
+    /// unchanged unless it explicitly opts in. Exempts ONLY the 72-hour registration floor on a schedule
+    /// that is genuinely moving; every other schedule rule (end after start, minimum duration, and the
+    /// absolute "start must be in the future" invariant) still applies regardless of this flag.
+    /// </param>
     Task<V2EditResult> ApplyPendingEditAsync(
-        VisitRequest request, VisitRequestEditV2Dto edit, ulong actorId, System.DateTime now, CancellationToken ct);
+        VisitRequest request, VisitRequestEditV2Dto edit, ulong actorId, System.DateTime now, CancellationToken ct,
+        bool allowShortNotice = false);
 
+    /// <param name="allowShortNotice">See <see cref="ApplyPendingEditAsync"/>.</param>
     Task<V2EditResult> ApplyResubmitAsync(
-        VisitRequest request, VisitRequestEditV2Dto edit, ulong actorId, System.DateTime now, CancellationToken ct);
+        VisitRequest request, VisitRequestEditV2Dto edit, ulong actorId, System.DateTime now, CancellationToken ct,
+        bool allowShortNotice = false);
 
     /// <summary>
     /// Sends ONE rejected campus back for review, leaving every sibling exactly as it was.
@@ -58,9 +69,11 @@ public interface IVisitRequestV2EditService
     /// them, not merely because a payload happened to echo the same values back.
     /// </para>
     /// </summary>
+    /// <param name="allowShortNotice">See <see cref="ApplyPendingEditAsync"/>.</param>
     Task<V2EditResult> ApplyInstanceResubmitAsync(
         VisitRequest request, VisitRequestCampus instance, InstanceResubmitScheduleDto content,
-        ulong actorId, System.DateTime now, CancellationToken ct);
+        ulong actorId, System.DateTime now, CancellationToken ct,
+        bool allowShortNotice = false);
 
     /// <summary>
     /// Rewrites ONE campus that is still waiting for its decision, leaving every sibling untouched.
@@ -102,8 +115,17 @@ public interface IVisitRequestV2EditService
     /// not mean there is nothing to decide. In that case this method is a no-op — no revision, no audit
     /// row, no row-version bump — and the caller proceeds straight to the approval it asked for.
     /// </param>
+    /// <param name="allowShortNotice">
+    /// See <see cref="ApplyPendingEditAsync"/>. Independent of <paramref name="actorIsCampusLeader"/>:
+    /// every actor who satisfies that (a campus's own Staff Leader who is also the request's registrant)
+    /// already satisfies this one too, so passing both true never asks for the confirmation dialog
+    /// below — but this is also true for an internal registrant who is NOT this campus's leader (a plain
+    /// Staff account, or a Staff Leader editing a sibling campus of their own request), which
+    /// <paramref name="actorIsCampusLeader"/> alone could never grant.
+    /// </param>
     Task<V2EditResult> ApplyInstancePendingEditAsync(
         VisitRequest request, VisitRequestCampus instance, CampusVisitEditV2Dto content,
         ulong actorId, System.DateTime now, bool actorIsCampusLeader, bool overrideLeadTimeConfirmed,
-        bool approveAfterSaveRequested, CancellationToken ct);
+        bool approveAfterSaveRequested, CancellationToken ct,
+        bool allowShortNotice = false);
 }

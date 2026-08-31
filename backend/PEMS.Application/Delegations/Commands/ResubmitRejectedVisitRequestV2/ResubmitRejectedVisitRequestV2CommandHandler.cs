@@ -88,10 +88,19 @@ public sealed class ResubmitRejectedVisitRequestV2CommandHandler
             c => c.Status == VisitInstanceStatuses.Rejected,
             VisitRequestErrorCodes.VisitRequestNotResubmittable);
 
+        // ── Short-notice capability (PEMS_SHORT_NOTICE_72H_ALL_REGISTRANT_MUTATIONS plan) ──
+        // The registrant guard above already proved actorId IS visit.RegistrantUserId. An internal
+        // Staff/Staff Leader account resubmitting THEIR OWN rejected request may propose a schedule
+        // under the 72-hour floor; a Visitor/Guest registrant keeps it exactly as before.
+        var allowShortNotice = VisitMutationPolicy.IsShortNoticeEligible(
+            VisitRequestOwnership.IsInternalActor(_currentUser),
+            isRegistrant: true);
+
         V2EditResult result;
         await using (var tx = await _db.BeginTransactionAsync(cancellationToken))
         {
-            result = await _editService.ApplyResubmitAsync(visit, request.Edit, actorId, now, cancellationToken);
+            result = await _editService.ApplyResubmitAsync(
+                visit, request.Edit, actorId, now, cancellationToken, allowShortNotice);
             await tx.CommitAsync(cancellationToken);
         }
 

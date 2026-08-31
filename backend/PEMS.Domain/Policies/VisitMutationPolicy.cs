@@ -389,6 +389,34 @@ public static class VisitMutationPolicy
             : new VisitScheduleLeadTimeDecision(false, true, earliest);
     }
 
+    /// <summary>
+    /// Whether THIS actor may file or accept a schedule under the 72-hour registration floor
+    /// (<see cref="MinScheduleLeadHours"/>) on THIS request — the one question this answers, and the
+    /// only one. The exemption belongs to the REQUEST, never to the role alone: an internal Staff/Staff
+    /// Leader account is short-notice-eligible only when they are also the REGISTRANT of the very
+    /// request being mutated, exactly the boundary <c>CreateVisitRequestV2CommandHandler</c> already
+    /// draws for a brand-new request (its <c>allowShortNoticeCreate</c>) — this is that same rule,
+    /// extended to every OTHER write path a registrant can reach on their own filed request: pending
+    /// edit (whole-request and per-campus) and resubmit-after-rejection (whole-request and per-campus).
+    ///
+    /// <para>
+    /// It is automatic and asks for no confirmation — the actor IS the person the floor protects, on
+    /// their own request, so filing it short is the rule being satisfied, not bypassed. That is
+    /// deliberately different from the campus Staff Leader's pre-existing override
+    /// (<paramref name="actorMayOverride"/>/<paramref name="overrideConfirmed"/> above): that mechanism
+    /// answers a DIFFERENT question — whether a leader deciding somebody else's proposal may knowingly
+    /// accept short notice — and every actor who could ever satisfy it already satisfies this one too
+    /// (a leader may only pass their own floor when they are ALSO the registrant), so it never has to
+    /// be asked to confirm what this already grants.
+    /// </para>
+    /// <para>
+    /// Authorization is untouched by this — it answers nothing about whether the actor may reach the
+    /// action at all, only whether the 72-hour floor still applies once they have.
+    /// </para>
+    /// </summary>
+    public static bool IsShortNoticeEligible(bool isInternalActor, bool isRegistrant) =>
+        isInternalActor && isRegistrant;
+
     private static VisitMutationDecision Refused(DateTime cutoffAt, string reason) =>
         new(false, VisitMutationErrorCodes.LifecycleNotAllowed, reason, cutoffAt, RequiredLeadHours);
 

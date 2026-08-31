@@ -105,7 +105,8 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             ct);
 
     public async Task<V2EditResult> ApplyPendingEditAsync(
-        VisitRequest request, VisitRequestEditV2Dto edit, ulong actorId, DateTime now, CancellationToken ct)
+        VisitRequest request, VisitRequestEditV2Dto edit, ulong actorId, DateTime now, CancellationToken ct,
+        bool allowShortNotice = false)
     {
         await EnsureMemberOrganizationsSelectableAsync(edit.CampusVisits, ct);
 
@@ -193,7 +194,9 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         {
             var scheduleMoves = instance.PlannedStartAt != content.PlannedStartAt
                                 || instance.PlannedEndAt != content.PlannedEndAt;
-            ValidateSchedule(content.CampusId, content.PlannedStartAt, content.PlannedEndAt, now, enforceLeadTime: scheduleMoves);
+            ValidateSchedule(
+                content.CampusId, content.PlannedStartAt, content.PlannedEndAt, now,
+                enforceLeadTime: scheduleMoves, allowShortNotice: allowShortNotice);
         }
 
         // ─────────────────────────────────────────────────────────────────────────────
@@ -411,7 +414,8 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
     }
 
     public async Task<V2EditResult> ApplyResubmitAsync(
-        VisitRequest request, VisitRequestEditV2Dto edit, ulong actorId, DateTime now, CancellationToken ct)
+        VisitRequest request, VisitRequestEditV2Dto edit, ulong actorId, DateTime now, CancellationToken ct,
+        bool allowShortNotice = false)
     {
         await EnsureMemberOrganizationsSelectableAsync(edit.CampusVisits, ct);
 
@@ -479,7 +483,7 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         //       Measured from this moment, never from when the request was originally filed: a request
         //       created on the 1st for the 10th was valid then, and resubmitting it on the 9th is a
         //       fresh ask that the campus has one day to answer. ──
-        ValidateSchedules(edit, now);
+        ValidateSchedules(edit, now, allowShortNotice);
 
         // ── 5. Every campus must STILL be operationally available (re-entry uses the same bar as create) ──
         var campusIds = request.CampusInstances.Select(c => c.CampusId).ToList();
@@ -698,7 +702,8 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
     public async Task<V2EditResult> ApplyInstancePendingEditAsync(
         VisitRequest request, VisitRequestCampus instance, CampusVisitEditV2Dto content,
         ulong actorId, DateTime now, bool actorIsCampusLeader, bool overrideLeadTimeConfirmed,
-        bool approveAfterSaveRequested, CancellationToken ct)
+        bool approveAfterSaveRequested, CancellationToken ct,
+        bool allowShortNotice = false)
     {
         await EnsureMemberOrganizationsSelectableAsync(new[] { content }, ct);
 
@@ -752,9 +757,14 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             content.CampusId, content.PlannedStartAt, content.PlannedEndAt, now,
             enforceLeadTime: scheduleChanged,
             leaderMayOverride: actorIsCampusLeader,
-            overrideConfirmed: overrideLeadTimeConfirmed);
+            overrideConfirmed: overrideLeadTimeConfirmed,
+            allowShortNotice: allowShortNotice);
+        // Either door that can land a schedule inside the floor: the campus leader's confirmed override,
+        // or the (broader) internal-registrant short-notice capability — an actor who satisfies the
+        // former always satisfies the latter too (see IsShortNoticeEligible's remarks), so this is a
+        // superset of the old condition, not a replacement of it.
         var usedLeadTimeOverride = scheduleChanged
-            && actorIsCampusLeader
+            && (actorIsCampusLeader || allowShortNotice)
             && content.PlannedStartAt < now.AddHours(VisitMutationPolicy.MinScheduleLeadHours);
 
         var detail = instance.FormDetail
@@ -964,7 +974,8 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
     /// </remarks>
     public async Task<V2EditResult> ApplyInstanceResubmitAsync(
         VisitRequest request, VisitRequestCampus instance, InstanceResubmitScheduleDto content,
-        ulong actorId, DateTime now, CancellationToken ct)
+        ulong actorId, DateTime now, CancellationToken ct,
+        bool allowShortNotice = false)
     {
         // ── 1. Only THIS campus need be rejected. Deliberately not the whole-request gate: a campus
         //       refused beside one that was approved is exactly the case this exists for. ──
@@ -1007,8 +1018,12 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         // the payload carries no contact and no member data at all for either of those guards to check.
 
         // ── 4. Registration lead time. This IS a resubmit, so the 72h floor applies to the new start
-        //       (plan §17) — measured from now, never from when the request was first filed. ──
-        ValidateSchedule(content.CampusId, content.PlannedStartAt, content.PlannedEndAt, now);
+        //       (plan §17) — measured from now, never from when the request was first filed. An internal
+        //       registrant resubmitting their OWN campus is exempt from the floor itself, never from the
+        //       future-time invariant below it (see ValidateSchedule). ──
+        ValidateSchedule(
+            content.CampusId, content.PlannedStartAt, content.PlannedEndAt, now,
+            allowShortNotice: allowShortNotice);
 
         // ── 5. The campus must still be able to take a visit at all — same bar as create. ──
         var availability = await CampusAvailabilityEvaluator.EvaluateAsync(_db, new[] { instance.CampusId }, ct);
@@ -1197,7 +1212,8 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
     /// </summary>
     private static void ValidateSchedule(
         string campusId, DateTime plannedStartAt, DateTime plannedEndAt, DateTime now,
-        bool enforceLeadTime = true, bool leaderMayOverride = false, bool overrideConfirmed = false)
+        bool enforceLeadTime = true, bool leaderMayOverride = false, bool overrideConfirmed = false,
+        bool allowShortNotice = false)
     {
         var campus = (campusId ?? string.Empty).Trim().ToUpperInvariant();
         if (plannedEndAt <= plannedStartAt)
@@ -1209,6 +1225,22 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
                 $"Cơ sở {campus}: thời lượng tối thiểu là {MinDurationMinutes} phút.",
                 VisitRequestErrorCodes.InvalidVisitTime);
         if (!enforceLeadTime)
+            return;
+
+        // Absolute invariant, independent of every lead-time exemption below it — the campus leader's
+        // confirmed override and the internal-registrant short-notice capability alike. Split out on
+        // purpose (mirrors VisitRequestV2CreateService's identical split for Create): exempting a
+        // schedule from the 72-hour floor must never, as a side effect, exempt it from "not in the
+        // past" too. Strictly greater than now, not "not yet past" — the same boundary Create uses.
+        if (plannedStartAt <= now)
+            throw new BusinessRuleException(
+                $"Cơ sở {campus}: thời gian bắt đầu phải ở trong tương lai.",
+                VisitRequestErrorCodes.InvalidVisitTime);
+
+        // Internal Staff/Staff Leader registrant (VisitMutationPolicy.IsShortNoticeEligible) — exempt
+        // from the 72-hour floor automatically, with no confirmation dialog: they are the person the
+        // floor protects, on their own request, so filing it short is the rule being satisfied.
+        if (allowShortNotice)
             return;
 
         var lead = VisitMutationPolicy.EvaluateScheduleLeadTime(
@@ -1289,7 +1321,7 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
     /// user hunting through the cards for which one is too soon.
     /// </para>
     /// </summary>
-    private static void ValidateSchedules(VisitRequestEditV2Dto edit, DateTime now)
+    private static void ValidateSchedules(VisitRequestEditV2Dto edit, DateTime now, bool allowShortNotice = false)
     {
         var earliestAllowedStart = now.AddHours(EditWindowHours);
         foreach (var cv in edit.CampusVisits)
@@ -1303,7 +1335,17 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
                 throw new BusinessRuleException(
                     $"Cơ sở {campus}: mỗi buổi thăm phải kéo dài tối thiểu {MinDurationMinutes} phút.",
                     VisitRequestErrorCodes.InvalidVisitTime);
-            if (cv.PlannedStartAt < earliestAllowedStart)
+            // Absolute invariant for every actor, short-notice or not — see the singular ValidateSchedule
+            // above for the full reasoning. A resubmit always proposes a schedule (never echoes an old
+            // one silently), so this runs unconditionally, same as the 72h check below it used to.
+            if (cv.PlannedStartAt <= now)
+                throw new BusinessRuleException(
+                    $"Cơ sở {campus}: thời gian bắt đầu phải ở trong tương lai.",
+                    VisitRequestErrorCodes.InvalidVisitTime);
+            // Internal Staff/Staff Leader registrant — exempt from the 72-hour floor only (plan
+            // §PEMS_SHORT_NOTICE_72H_ALL_REGISTRANT_MUTATIONS). Every other actor keeps it exactly as
+            // before.
+            if (!allowShortNotice && cv.PlannedStartAt < earliestAllowedStart)
                 throw new BusinessRuleException(
                     $"Cơ sở {campus}: {VisitScheduleMessages.LeadTimeNotMet(earliestAllowedStart)}",
                     VisitRequestErrorCodes.InvalidVisitTime);

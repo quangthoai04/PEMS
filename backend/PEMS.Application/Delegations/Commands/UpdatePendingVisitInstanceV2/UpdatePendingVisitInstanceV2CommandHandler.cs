@@ -135,6 +135,17 @@ public sealed class UpdatePendingVisitInstanceV2CommandHandler
             throw new ForbiddenException(
                 "Chỉ Staff Leader phụ trách đúng cơ sở này và đồng thời là người đăng ký đơn mới được lưu và duyệt.");
 
+        // ── Short-notice capability (PEMS_SHORT_NOTICE_72H_ALL_REGISTRANT_MUTATIONS plan) ──
+        // Broader than the campus-leader override above on purpose: an internal Staff/Staff Leader
+        // account editing a campus of THEIR OWN request is exempt from the 72-hour floor whether or not
+        // they lead THIS particular campus — a plain Staff registrant never leads any campus, and a
+        // Staff Leader registrant may be editing a sibling campus they do not lead. relation.IsRegistrant
+        // is the same fact ActsAsCampusLeader already requires, so this is a strict superset: every
+        // actor the leader override could ever apply to already gets this one, automatically and with no
+        // confirmation dialog.
+        var allowShortNotice = VisitMutationPolicy.IsShortNoticeEligible(
+            VisitRequestOwnership.IsInternalActor(_currentUser), relation.IsRegistrant);
+
         var previousRequestStatus = visit.Status;
         CampusApprovalOutcome? approval = null;
         int requestRowVersion;
@@ -143,14 +154,18 @@ public sealed class UpdatePendingVisitInstanceV2CommandHandler
         {
             var result = await _editService.ApplyInstancePendingEditAsync(
                 visit, instance, request.Content, actorId, now,
-                // The 72-hour override belongs to the leader OF THIS CAMPUS who filed the request, and to
-                // nobody else: a leader who did not file it never reaches this line, and a registrant who
-                // leads a different campus edits here as a requester — the floor protects the leader who
-                // will actually have to prepare THIS visit, so only they can knowingly stand it down.
+                // The 72-hour CONFIRMATION override belongs to the leader OF THIS CAMPUS who filed the
+                // request, and to nobody else: a leader who did not file it never reaches this line, and
+                // a registrant who leads a different campus edits here as a requester. In practice every
+                // actor who satisfies this also satisfies allowShortNotice below, which is checked FIRST
+                // by the service and never asks them to confirm — this parameter now only matters for an
+                // actor allowShortNotice does not cover (there is none today; kept for the mechanism's
+                // own sake, see VisitMutationPolicy.IsShortNoticeEligible's remarks).
                 actorIsCampusLeader: relation.ActsAsCampusLeader,
                 overrideLeadTimeConfirmed: request.OverrideLeadTimeConfirmed,
                 approveAfterSaveRequested: request.ApproveAfterSave is not null,
-                cancellationToken);
+                cancellationToken,
+                allowShortNotice: allowShortNotice);
             requestRowVersion = result.RequestRowVersion;
 
             // One transaction covers both, so a refused approval takes the edit down with it (§57). The

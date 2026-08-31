@@ -133,6 +133,19 @@ public static class VisitRequestOwnership
            && currentUser.SubRole == UserSubRoles.Leader;
 
     /// <summary>
+    /// The actor's account is Staff or Staff Leader — "internal" in the sense
+    /// <see cref="VisitMutationPolicy.IsShortNoticeEligible"/> uses it, and the same test
+    /// <c>CreateVisitRequestV2CommandHandler</c>'s <c>isInternal</c> already makes for a brand-new
+    /// request. On its own it authorizes NOTHING and decides no campus, exactly like
+    /// <see cref="IsStaffLeader"/> above — it only feeds the short-notice capability, which additionally
+    /// requires <see cref="IsRegistrant"/> of the SAME request before it means anything.
+    /// </summary>
+    public static bool IsInternalActor(
+        PEMS.Application.Common.Interfaces.ICurrentUserService currentUser)
+        => currentUser.RoleCode == RoleCodes.Staff
+           && (currentUser.SubRole == UserSubRoles.Staff || currentUser.SubRole == UserSubRoles.Leader);
+
+    /// <summary>
     /// Staff Leader OF THIS CAMPUS — the approval authority before a decision, and the person who hands
     /// the Host role over after one. Campus scoping is part of the relation, not a separate check: a
     /// leader of a different campus is a stranger to this one, whatever their role name says.

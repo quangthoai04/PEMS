@@ -333,6 +333,21 @@ public class VisitMutationPolicyTests
         Assert.False(decision.ConfirmationRequired);
     }
 
+    // ── IsShortNoticeEligible (PEMS_SHORT_NOTICE_72H_ALL_REGISTRANT_MUTATIONS) — the capability behind
+    //    allowShortNotice on every create/edit/resubmit path: internal actor AND registrant of THIS
+    //    request, both required, neither sufficient alone. ──
+
+    [Theory]
+    [InlineData(true, true, true)]    // internal Staff/Staff Leader, registrant of this request → eligible
+    [InlineData(true, false, false)]  // internal, but NOT the registrant (e.g. only the operational contact) → not eligible
+    [InlineData(false, true, false)]  // registrant, but not internal (Visitor/Guest) → not eligible
+    [InlineData(false, false, false)] // neither → not eligible
+    public void IsShortNoticeEligible_RequiresBothInternalAndRegistrant(
+        bool isInternalActor, bool isRegistrant, bool expected)
+    {
+        Assert.Equal(expected, VisitMutationPolicy.IsShortNoticeEligible(isInternalActor, isRegistrant));
+    }
+
     /// <summary>
     /// The two numbers answer different questions and must not be collapsed into one: 6 hours is how
     /// late an action may be taken on an existing schedule, 72 is how soon a schedule may be SET.

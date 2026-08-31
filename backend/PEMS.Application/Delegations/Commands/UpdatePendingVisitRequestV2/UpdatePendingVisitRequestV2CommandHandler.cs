@@ -96,11 +96,22 @@ public sealed class UpdatePendingVisitRequestV2CommandHandler
         // Campuses involved BEFORE the edit (kept + removed) — their leaders are notified too.
         var campusIdsBefore = visit.CampusInstances.Select(c => c.CampusId).ToList();
 
+        // ── Short-notice capability (PEMS_SHORT_NOTICE_72H_ALL_REGISTRANT_MUTATIONS plan) ──
+        // The registrant guard above already proved actorId IS visit.RegistrantUserId, so the only
+        // remaining question is the actor's role. An internal Staff/Staff Leader account editing THEIR
+        // OWN request may move a campus's schedule under the 72-hour floor; a Visitor/Guest registrant
+        // keeps it exactly as before. Never derived from the payload — only from the actor's own role
+        // claims and the ownership check already performed.
+        var allowShortNotice = VisitMutationPolicy.IsShortNoticeEligible(
+            VisitRequestOwnership.IsInternalActor(_currentUser),
+            isRegistrant: true);
+
         V2EditResult result;
         await using (var tx = await _db.BeginTransactionAsync(cancellationToken))
         {
             // The service re-checks concurrency/lifecycle/data rules in-transaction and applies everything.
-            result = await _editService.ApplyPendingEditAsync(visit, request.Edit, actorId, now, cancellationToken);
+            result = await _editService.ApplyPendingEditAsync(
+                visit, request.Edit, actorId, now, cancellationToken, allowShortNotice);
             await tx.CommitAsync(cancellationToken);
         }
 

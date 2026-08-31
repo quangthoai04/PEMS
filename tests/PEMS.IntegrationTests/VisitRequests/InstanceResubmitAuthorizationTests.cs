@@ -14,6 +14,7 @@ using PEMS.Application.Delegations.Commands.ResubmitRejectedVisitInstanceV2;
 using PEMS.Application.Delegations.Services;
 using PEMS.Application.Notifications.Common;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Policies;
 using PEMS.Infrastructure.Persistence;
 using PEMS.Infrastructure.Services;
 using Xunit;
@@ -42,6 +43,9 @@ public sealed class InstanceResubmitAuthorizationTests
             "server=localhost;port=3306;database=pems_pr3_test;user=root;password=123456;AllowUserVariables=True;GuidFormat=None");
 
     private const ulong Registrant = 8;
+    /// <summary>STAFF / STAFF, IC, campus 1 — same canonical seed id used as IcStaffHn by
+    /// PerCampusEditRelationAuthorizationTests, reused here for the short-notice resubmit cases.</summary>
+    private const ulong InternalStaffRegistrant = 101;
     private static bool? _dbUp;
     private static readonly DateTime Now = DateTime.Now;
     private static readonly PerCampusFormV2WriteOptions WriteOn = new() { Enabled = true };
@@ -62,11 +66,16 @@ public sealed class InstanceResubmitAuthorizationTests
 
     private sealed class FakeUser : ICurrentUserService
     {
-        public FakeUser(ulong id) => UserId = id;
+        public FakeUser(ulong id, string roleCode = RoleCodes.Visitor, string? subRole = null)
+        {
+            UserId = id;
+            RoleCode = roleCode;
+            SubRole = subRole;
+        }
         public ulong? UserId { get; }
         public string? Email => null;
-        public string? RoleCode => RoleCodes.Visitor;
-        public string? SubRole => null;
+        public string? RoleCode { get; }
+        public string? SubRole { get; }
         public ulong? PrimaryCampusId => null;
         public ulong? DepartmentId => null;
         public ulong? RoleId => null;
@@ -90,7 +99,10 @@ public sealed class InstanceResubmitAuthorizationTests
     }
 
     private static ResubmitRejectedVisitInstanceV2CommandHandler Handler(ApplicationDbContext db, ulong actor)
-        => new(db, new FakeUser(actor), new FixedClock(),
+        => Handler(db, new FakeUser(actor));
+
+    private static ResubmitRejectedVisitInstanceV2CommandHandler Handler(ApplicationDbContext db, FakeUser actor)
+        => new(db, actor, new FixedClock(),
             new VisitRequestV2EditService(db, new VisitRequestAggregateStatusService(db)),
             new NoopNotifications(),
             NullLogger<ResubmitRejectedVisitInstanceV2CommandHandler>.Instance, WriteOn);
@@ -109,11 +121,19 @@ public sealed class InstanceResubmitAuthorizationTests
             "EN", null, "DECLINED", null, null);
     }
 
-    private static async Task<ulong> CreateAsync(params CampusVisitFormDto[] campuses)
+    private static Task<ulong> CreateAsync(params CampusVisitFormDto[] campuses) => CreateAsync(Registrant, campuses);
+
+    /// <summary>
+    /// Same fixture, filed by an arbitrary registrant — used to seed a request an internal (Staff/Staff
+    /// Leader) account owns, for the short-notice resubmit cases. The actor is direct-create authenticated
+    /// as <paramref name="registrantUserId"/> itself (self-registration), matching how the real endpoint
+    /// only ever grants short notice to a registrant editing/resubmitting their OWN request.
+    /// </summary>
+    private static async Task<ulong> CreateAsync(ulong registrantUserId, params CampusVisitFormDto[] campuses)
     {
         using var db = NewContext();
         var handler = new CreateVisitRequestV2CommandHandler(
-            db, new FakeUser(Registrant), new FixedClock(), new VisitRequestV2CreateService(db),
+            db, new FakeUser(registrantUserId), new FixedClock(), new VisitRequestV2CreateService(db),
             new NoopNotifications(), new CreateVisitRequestV2CommandTests.RecordingInvitationService(),
             new UserProvisionService(db),
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance,
@@ -123,10 +143,14 @@ public sealed class InstanceResubmitAuthorizationTests
 
         var form = new VisitRequestFormDataV2(
             "IR" + Guid.NewGuid().ToString("N"),
-            new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
+            new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(registrantUserId)),
             null, campuses.ToList());
         return (await handler.Handle(new CreateVisitRequestV2Command(form), CancellationToken.None)).VisitRequestId;
     }
+
+    /// <summary>Drops sub-second precision, which <c>DATETIME</c> does not keep.</summary>
+    private static DateTime TrimToSecond(DateTime value)
+        => new(value.Year, value.Month, value.Day, value.Hour, value.Minute, value.Second, value.Kind);
 
     /// <summary>The payload that resubmits one campus: SCHEDULE-ONLY (plan FIX-G/H) — its own row
     /// version, campus code and a fresh, legal start/end. No content, no members, no contact.</summary>
@@ -203,6 +227,44 @@ public sealed class InstanceResubmitAuthorizationTests
         await db.Database.ExecuteSqlRawAsync(
             "UPDATE visit_request_campuses SET operational_contact_user_id = {1} WHERE visit_instance_id = {0}",
             instanceId, userId);
+    }
+
+    /// <summary>
+    /// Confirms the FIRST contact of a still-<c>WAITING_CONTACT_CONFIRMATION</c> campus, exactly the way
+    /// <c>PerCampusEditRelationAuthorizationTests.ConfirmContactAsync</c> does: the DB triggers on that
+    /// column (<c>WAITING_CONTACT_CONFIRMATION_MUST_NOT_HAVE_OPERATIONAL_CONTACT</c>,
+    /// <c>CONTACT_CONFIRMATION_REQUIRED</c>) expect the full confirmed-contact shape — the timestamp and
+    /// source alongside the id — and the matching invitation settled, not a bare id swap.
+    /// </summary>
+    private static async Task ConfirmInitialContactAsync(ulong requestId, ulong instanceId, ulong userId)
+    {
+        using var db = NewContext();
+        var instance = await db.VisitRequestCampuses.SingleAsync(c => c.VisitInstanceId == instanceId);
+        instance.OperationalContactUserId = userId;
+        instance.OperationalContactConfirmedAt = Now;
+        instance.OperationalContactConfirmationSource = OperationalContactSources.EmailConfirmation;
+        instance.Status = VisitInstanceStatuses.WaitingRequestApproval;
+
+        // Matches ConfirmContactAsync's own simplification: these fixtures never need the gate to read
+        // correctly for an UNCONFIRMED sibling mid-setup, only for the trigger on THIS campus's own
+        // columns to accept the write; by the time a test actually exercises the request, every campus
+        // it cares about has been through this same call.
+        var visit = await db.VisitRequests.SingleAsync(v => v.VisitRequestId == requestId);
+        visit.Status = VisitRequestStatuses.PendingApproval;
+        visit.ContactGateRevision += 1;
+
+        var invitations = await db.VisitRequestIdentityChanges
+            .Where(c => c.VisitRequestId == requestId && c.VisitInstanceId == instanceId
+                        && c.Status == IdentityChangeStatuses.Pending)
+            .ToListAsync();
+        foreach (var invitation in invitations)
+        {
+            invitation.Status = IdentityChangeStatuses.Applied;
+            invitation.NewUserId = userId;
+            invitation.AppliedAt = Now;
+        }
+
+        await db.SaveChangesAsync();
     }
 
     private static async Task<ulong> OtherVisitorAsync()
@@ -431,4 +493,90 @@ public sealed class InstanceResubmitAuthorizationTests
         }
         finally { await CleanupAsync(requestId); }
     }
+
+    // ── PEMS_SHORT_NOTICE_72H_ALL_REGISTRANT_MUTATIONS: resubmit-instance is the LAST of the five
+    //    mutation paths the plan extends short notice to. Before this change ApplyInstanceResubmitAsync
+    //    had no lead-time exemption at all — every actor, internal or not, was held to the 72-hour floor
+    //    on the resubmitted campus's new schedule. ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// An internal (Staff/Staff Leader) registrant resubmitting a rejected campus of THEIR OWN request
+    /// may propose a new start inside the 72-hour floor — automatically, no confirmation dialog, the same
+    /// capability Create/pending-edit already grant this pairing
+    /// (<c>VisitMutationPolicy.IsShortNoticeEligible</c>).
+    /// </summary>
+    [Fact]
+    public async Task An_internal_registrant_may_resubmit_a_rejected_campus_inside_the_floor()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(InternalStaffRegistrant, Campus("HN"));
+            var before = await StateAsync(requestId);
+            // HN's contact (Campus()'s fixed email) is NOT this registrant, so create leaves it
+            // WAITING_CONTACT_CONFIRMATION with no contact bound yet — confirm one directly (as the real
+            // confirmation flow would) before the reject trigger will accept the campus.
+            await ConfirmInitialContactAsync(requestId, before["HN"].InstanceId, Registrant);
+            await RejectAsync(before["HN"].InstanceId, "HN từ chối");
+
+            var tooSoon = TrimToSecond(Now.AddHours(VisitMutationPolicy.MinScheduleLeadHours).AddMinutes(-30));
+            var payload = await PayloadAsync(before["HN"].InstanceId, tooSoon);
+
+            using (var db = NewContext())
+            {
+                var result = await Handler(db, new FakeUser(InternalStaffRegistrant, RoleCodes.Staff, UserSubRoles.Staff))
+                    .Handle(new ResubmitRejectedVisitInstanceV2Command(requestId, before["HN"].InstanceId, payload),
+                        CancellationToken.None);
+                Assert.Equal(VisitInstanceStatuses.WaitingRequestApproval, result.VisitInstanceStatus);
+            }
+
+            var after = await StateAsync(requestId);
+            Assert.Equal(VisitInstanceStatuses.WaitingRequestApproval, after["HN"].Status);
+            using var check = NewContext();
+            var instance = await check.VisitRequestCampuses.AsNoTracking()
+                .SingleAsync(c => c.VisitInstanceId == before["HN"].InstanceId);
+            Assert.Equal(tooSoon, instance.PlannedStartAt);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// A non-internal (VISITOR) registrant resubmitting their own rejected campus keeps the 72-hour floor
+    /// exactly as before — short notice is Staff/Staff Leader only, whatever else the actor may be to the
+    /// request.
+    /// </summary>
+    [Fact]
+    public async Task A_visitor_registrant_resubmitting_inside_the_floor_is_still_refused()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN")); // filed by Registrant (VISITOR seed)
+            var before = await StateAsync(requestId);
+            await RejectAsync(before["HN"].InstanceId, "HN từ chối");
+
+            var tooSoon = TrimToSecond(Now.AddHours(VisitMutationPolicy.MinScheduleLeadHours).AddMinutes(-30));
+            var payload = await PayloadAsync(before["HN"].InstanceId, tooSoon);
+
+            using (var db = NewContext())
+            {
+                var ex = await Assert.ThrowsAsync<BusinessRuleException>(() => Handler(db, Registrant).Handle(
+                    new ResubmitRejectedVisitInstanceV2Command(requestId, before["HN"].InstanceId, payload),
+                    CancellationToken.None));
+                Assert.Equal(VisitRequestErrorCodes.InvalidVisitTime, ex.ErrorCode);
+            }
+
+            var after = await StateAsync(requestId);
+            Assert.Equal(VisitInstanceStatuses.Rejected, after["HN"].Status); // untouched — the refusal rolled back
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // Short notice never widens WHO may resubmit — only how soon they may schedule it. That relation-only
+    // refusal (a sibling campus's contact, or a stranger, hold no authority over THIS campus) is already
+    // proven role-independently by A_sibling_contact_and_a_random_visitor_cannot_resubmit_this_campus
+    // above, and this change does not touch VisitRequestOwnership.IsGuestSide at all — allowShortNotice is
+    // gated behind IsRegistrant, a strict SUBSET of what that guard already requires.
 }

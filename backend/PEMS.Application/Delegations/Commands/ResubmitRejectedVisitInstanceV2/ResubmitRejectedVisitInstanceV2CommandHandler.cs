@@ -10,6 +10,7 @@ using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Common;
 using PEMS.Application.Notifications.Common;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Policies;
 
 namespace PEMS.Application.Delegations.Commands.ResubmitRejectedVisitInstanceV2;
 
@@ -80,10 +81,20 @@ public sealed class ResubmitRejectedVisitInstanceV2CommandHandler
             throw new ForbiddenException(
                 "Chỉ người đăng ký hoặc đầu mối vận hành của cơ sở này mới được gửi lại cơ sở này.");
 
+        // ── Short-notice capability (PEMS_SHORT_NOTICE_72H_ALL_REGISTRANT_MUTATIONS plan) ──
+        // IsGuestSide above admits BOTH the registrant and this campus's confirmed operational contact —
+        // short notice belongs to the registrant alone, so it is re-derived here from the narrower
+        // ownership fact rather than reused from the guard above. An internal Staff/Staff Leader
+        // operational contact (if one could exist) gets nothing extra from being internal; only the
+        // registrant of THEIR OWN request does.
+        var allowShortNotice = VisitMutationPolicy.IsShortNoticeEligible(
+            VisitRequestOwnership.IsInternalActor(_currentUser),
+            VisitRequestOwnership.IsRegistrant(visit, actorId));
+
         await using var tx = await _db.BeginTransactionAsync(cancellationToken);
 
         var result = await _editService.ApplyInstanceResubmitAsync(
-            visit, instance, request.Content, actorId, now, cancellationToken);
+            visit, instance, request.Content, actorId, now, cancellationToken, allowShortNotice);
 
         await tx.CommitAsync(cancellationToken);
 
