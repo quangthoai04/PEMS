@@ -56,6 +56,7 @@ import { FeedbackManagement } from './pages/dashboard/feedback/FeedbackManagemen
 import { FeedbackDetail } from './pages/dashboard/feedback/FeedbackDetail';
 import { AccountManagement } from './pages/dashboard/accounts/AccountManagement';
 import { VisitFPTUPage } from './pages/VisitFPTUPage';
+import { AboutPage } from './pages/AboutPage';
 import { CampusDetailVisitPage } from './pages/CampusDetailVisitPage';
 import { VisitRequestManagement } from './pages/dashboard/visit/VisitRequestManagement';
 import { VisitPhotoManagement } from './pages/dashboard/visit/VisitPhotoManagement';
@@ -156,6 +157,7 @@ export default function App() {
         <Routes>
           {/* Public Routes */}
           <Route path="/" element={<HomePage />} />
+          <Route path="/about" element={<AboutPage />} />
           <Route path="/news" element={<NewsPage />} />
           <Route path="/news/:id" element={<NewsDetailPage />} />
           <Route path="/partners" element={<PartnersPage />} />

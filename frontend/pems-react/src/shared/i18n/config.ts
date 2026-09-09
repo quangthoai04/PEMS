@@ -24,6 +24,7 @@ import viProfile from './locales/vi/profile.json';
 import viVisitorVisitDetail from './locales/vi/visitorVisitDetail.json';
 import viFeedback from './locales/vi/feedback.json';
 import viVisitTasks from './locales/vi/visitTasks.json';
+import viAbout from './locales/vi/about.json';
 
 import enCommon from './locales/en/common.json';
 import enPublicLayout from './locales/en/publicLayout.json';
@@ -48,6 +49,7 @@ import enProfile from './locales/en/profile.json';
 import enVisitorVisitDetail from './locales/en/visitorVisitDetail.json';
 import enFeedback from './locales/en/feedback.json';
 import enVisitTasks from './locales/en/visitTasks.json';
+import enAbout from './locales/en/about.json';
 
 const resources = {
   vi: {
@@ -74,6 +76,7 @@ const resources = {
     visitorVisitDetail: viVisitorVisitDetail,
     feedback: viFeedback,
     visitTasks: viVisitTasks,
+    about: viAbout,
   },
   en: {
     common: enCommon,
@@ -99,6 +102,7 @@ const resources = {
     visitorVisitDetail: enVisitorVisitDetail,
     feedback: enFeedback,
     visitTasks: enVisitTasks,
+    about: enAbout,
   },
 };
 
@@ -127,7 +131,7 @@ i18n
       'common', 'publicLayout', 'home', 'news', 'partners',
       'faq', 'gallery', 'visitRequest', 'visitRequestV2', 'validation', 'errors', 'toast',
       'loginModal', 'search', 'visitFptu', 'notifications', 'visitFaceScan', 'files', 'legal', 'profile',
-      'visitorVisitDetail', 'feedback', 'visitTasks'
+      'visitorVisitDetail', 'feedback', 'visitTasks', 'about'
     ],
     defaultNS: 'common',
     interpolation: {

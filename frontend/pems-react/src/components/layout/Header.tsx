@@ -124,6 +124,10 @@ export function Header() {
                 <span>{t('publicLayout:nav.home')}</span>
               </Link>
 
+              <Link to="/about" className={getLinkClass('/about')}>
+                <span>{t('publicLayout:nav.about')}</span>
+              </Link>
+
               <Link to="/news" className={getLinkClass('/news')}>
                 <span>{t('publicLayout:nav.news')}</span>
               </Link>
@@ -321,6 +325,7 @@ export function Header() {
               <div className="space-y-1">
                 <h4 className="text-xs uppercase font-extrabold text-slate-400 tracking-wider mb-2.5 px-1">{t('publicLayout:profile.category')}</h4>
                 <Link to="/" className={getMobileLinkClass('/')} onClick={() => setIsMobileMenuOpen(false)}>{t('publicLayout:nav.home')}</Link>
+                <Link to="/about" className={getMobileLinkClass('/about')} onClick={() => setIsMobileMenuOpen(false)}>{t('publicLayout:nav.about')}</Link>
                 <Link to="/news" className={getMobileLinkClass('/news')} onClick={() => setIsMobileMenuOpen(false)}>{t('publicLayout:nav.news')}</Link>
                 <Link to="/partners" className={getMobileLinkClass('/partners')} onClick={() => setIsMobileMenuOpen(false)}>{t('publicLayout:nav.partners')}</Link>
                 <a href="https://outbound.fpt.edu.vn/" target="_blank" rel="noopener noreferrer" className="w-full px-4 py-3 rounded-xl font-bold transition-all flex items-center text-gray-700 hover:bg-slate-50 hover:text-[#f37021]">Outbound</a>
