@@ -19,7 +19,11 @@ import {
   Code2
 } from 'lucide-react';
 
+import yenAvatar from '../assets/Member/yen.jpg';
 import thoaiAvatar from '../assets/Member/thoai.jpg';
+import duyAvatar from '../assets/Member/duy.jpg';
+import phanhAvatar from '../assets/Member/phanh.jpg';
+import canhAvatar from '../assets/Member/canh.jpg';
 
 interface CampusStaffConfig {
   key: string;
@@ -49,6 +53,7 @@ const devMembers: DevMember[] = [
     name: 'Nguyen Thi Yen',
     code: 'HE172008',
     role: 'Project Manager, BA',
+    avatar: yenAvatar,
     initials: 'TY',
     gradient: 'from-amber-400 to-orange-500',
   },
@@ -64,6 +69,7 @@ const devMembers: DevMember[] = [
     name: 'Nguyen Dinh Duy',
     code: 'HE181072',
     role: 'Frontend Developer',
+    avatar: duyAvatar,
     initials: 'DD',
     gradient: 'from-indigo-500 to-purple-500',
   },
@@ -71,6 +77,7 @@ const devMembers: DevMember[] = [
     name: 'Truong Thi Phuong Anh',
     code: 'HE181589',
     role: 'Tester, Frontend Developer',
+    avatar: phanhAvatar,
     initials: 'PA',
     gradient: 'from-rose-400 to-pink-500',
   },
@@ -78,6 +85,7 @@ const devMembers: DevMember[] = [
     name: 'Nguyen Van Thang Canh',
     code: 'HE186121',
     role: 'Backend Developer',
+    avatar: canhAvatar,
     initials: 'TC',
     gradient: 'from-teal-400 to-emerald-500',
   },
